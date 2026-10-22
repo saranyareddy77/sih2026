@@ -612,6 +612,19 @@ class ApplicationService {
   }
 
   /**
+   * Uploads a document attachment for an application
+   */
+  async uploadDocument(
+    applicationId: string,
+    documentType: string,
+    file: File,
+    actorName: string
+  ): Promise<{ app: Application; document: ApplicationDocument }> {
+    return this.uploadReplacementDocument(applicationId, documentType, file, actorName);
+  }
+
+
+  /**
    * Allows manual correction of an extracted field on a document with provenance tracking
    */
   async correctDocumentField(

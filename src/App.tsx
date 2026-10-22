@@ -12,44 +12,6 @@ import { AdminAuthorizationsPage } from './pages/AdminAuthorizationsPage';
 import { AuthPage } from './pages/AuthPage';
 import { authService, AuthUserSession } from './services/authService';
 
-// Floating Quick Role Switcher for instant evaluator testing
-const FloatingRoleSwitcher: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<AuthUserSession | null>(authService.getCurrentUser());
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  useEffect(() => {
-    return authService.subscribe(u => setCurrentUser(u));
-  }, []);
-
-  const handleRoleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const role = e.target.value as 'institution' | 'admin' | 'super_admin';
-    authService.setDemoUser(role);
-    if (role === 'admin' || role === 'super_admin') {
-      if (location.pathname === '/institution') navigate('/admin');
-    } else {
-      if (location.pathname.startsWith('/admin')) navigate('/institution');
-    }
-  };
-
-  const currentRoleValue = currentUser?.roles.includes('super_admin')
-    ? 'super_admin'
-    : currentUser?.roles.includes('admin')
-    ? 'admin'
-    : 'institution';
-
-  return (
-    <div className="role-switcher-pill" title="Toggle active role for testing workflows">
-      <span style={{ fontWeight: 600 }}>Active Role:</span>
-      <select value={currentRoleValue} onChange={handleRoleChange}>
-        <option value="institution">🏫 Institution User</option>
-        <option value="admin">🛡️ Scrutiny Admin</option>
-        <option value="super_admin">👑 Super Admin</option>
-      </select>
-    </div>
-  );
-};
-
 // Route wrapper for Institution
 const InstitutionRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const user = authService.getCurrentUser();
@@ -129,9 +91,6 @@ export const App: React.FC = () => {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
-
-        {/* Global floating role switch tool */}
-        <FloatingRoleSwitcher />
       </div>
     </BrowserRouter>
   );

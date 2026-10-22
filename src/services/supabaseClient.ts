@@ -3,26 +3,35 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://nyzhayxwntecvhpwiwwo.supabase.co';
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55emhheXh3bnRlY3ZocHdpd3dvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2Njk1OTEsImV4cCI6MjEwODI0NTU5MX0._WA9QvYcU7O2wGUUYhMoCuO4-RfNvSd0bJ680itMznQ';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export const isConfigured = Boolean(
   supabaseUrl && 
   supabaseKey && 
   !supabaseUrl.includes('your-project') &&
-  !supabaseKey.includes('your-supabase-public-anon-key')
+  !supabaseKey.includes('your-supabase-public-anon-key') &&
+  supabaseUrl.startsWith('https://')
 );
+
+export const isSupabaseConfigured = (): boolean => isConfigured;
+
 
 // Private storage bucket name as per specification
 export const APPLICATION_DOCUMENTS_BUCKET = 'application-documents';
 
-export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true
+// Initialize client only when valid environment credentials are provided
+export const supabase = createClient(
+  isConfigured ? supabaseUrl : 'https://placeholder.supabase.co',
+  isConfigured ? supabaseKey : 'placeholder-anon-key',
+  {
+    auth: {
+      persistSession: isConfigured,
+      autoRefreshToken: isConfigured,
+      detectSessionInUrl: isConfigured
+    }
   }
-});
+);
 
 /**
  * Creates a short-lived signed URL for authorized preview of documents in private storage.
