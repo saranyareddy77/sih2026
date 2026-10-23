@@ -1,7 +1,53 @@
 // AICTE SmartVerify Type Definitions
 // SIH Problem Statement 26261
 
-export type UserRole = 'institution' | 'admin' | 'super_admin';
+export type UserRole = 
+  | 'super_admin' 
+  | 'scrutiny_officer' 
+  | 'scrutiny_member' 
+  | 'institution_user' 
+  | 'admin' 
+  | 'institution';
+
+export interface ScrutinyTeam {
+  id: string;
+  officer_id: string;
+  team_name: string;
+  region_or_scope?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  officer_profile?: Profile;
+  members?: TeamMemberWithProfile[];
+}
+
+export interface TeamMember {
+  id: string;
+  team_id: string;
+  member_id: string;
+  assigned_by?: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface TeamMemberWithProfile extends TeamMember {
+  profile?: Profile;
+}
+
+export interface ApplicationAssignment {
+  id: string;
+  application_id: string;
+  team_id?: string;
+  officer_id?: string;
+  assigned_member_id?: string;
+  assigned_by?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  team?: ScrutinyTeam;
+  officer?: Profile;
+  member?: Profile;
+}
 
 export type ApplicationStatus =
   | 'Draft'

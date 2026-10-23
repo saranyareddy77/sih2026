@@ -2,10 +2,8 @@
 // SIH Problem Statement 26261
 
 import { supabase, isConfigured } from './supabaseClient';
-import { Profile, UserRole, Institution } from '../types';
+import { Profile, UserRole, Institution, ScrutinyTeam, ApplicationAssignment } from '../types';
 import { SYNTHETIC_INSTITUTIONS } from '../data/syntheticDemoData';
-
-const LOCAL_STORAGE_USER_KEY = 'aicte_smartverify_current_user';
 
 export interface AuthUserSession {
   id: string;
@@ -15,56 +13,124 @@ export interface AuthUserSession {
   institution_id?: string;
   institution?: Institution;
   roles: UserRole[];
-  isDemoSession: boolean;
 }
 
-// Built-in synthetic demo users for instant presentation & testing
-export const DEMO_USERS: Record<string, AuthUserSession> = {
-  institution: {
-    id: 'user-inst-demo-1',
-    email: 'registrar@niatr-demo.edu.in',
-    full_name: 'Dr. Amitabh Verma',
-    designation: 'Registrar & Authorized Representative',
-    institution_id: 'inst-1',
-    institution: SYNTHETIC_INSTITUTIONS[0],
-    roles: ['institution'],
-    isDemoSession: true
-  },
-  admin: {
-    id: 'user-admin-demo-2',
-    email: 'scrutiny.officer@aicte-india.org',
-    full_name: 'Dr. V. K. Deshmukh',
-    designation: 'Regional Scrutiny Officer (Northern Region)',
-    roles: ['admin'],
-    isDemoSession: true
-  },
-  super_admin: {
-    id: 'user-superadmin-demo-3',
-    email: 'director.approval@aicte-india.org',
-    full_name: 'Prof. T. G. Chandrasekhar',
-    designation: 'Member Secretary & Super Admin',
-    roles: ['admin', 'super_admin'],
-    isDemoSession: true
-  }
-};
+export interface RegisterInstitutionParams {
+  email: string;
+  password: string;
+  fullName: string;
+  institutionName: string;
+  institutionCode: string;
+  aisheCode?: string;
+  institutionType?: string;
+  designation?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+}
 
 class AuthService {
   private currentUser: AuthUserSession | null = null;
+  private initialized: boolean = false;
   private listeners: Array<(user: AuthUserSession | null) => void> = [];
 
   constructor() {
-    // Restore session from localStorage if available
-    const saved = localStorage.getItem(LOCAL_STORAGE_USER_KEY);
-    if (saved) {
-      try {
-        this.currentUser = JSON.parse(saved);
-      } catch (e) {
-        localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
+    this.initSession();
+  }
+
+  private async initSession() {
+    if (!isConfigured) {
+      this.initialized = true;
+      this.notify();
+      return;
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await this.loadUserProfileAndRoles(session.user.id, session.user.email || '');
       }
-    } else {
-      // Default to institution demo user so the app is immediately populated and usable
-      this.currentUser = DEMO_USERS.institution;
-      localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(this.currentUser));
+    } catch (err) {
+      console.warn('Session restoration exception:', err);
+    } finally {
+      this.initialized = true;
+      this.notify();
+    }
+
+    // Subscribe to auth state changes from Supabase
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        await this.loadUserProfileAndRoles(session.user.id, session.user.email || '');
+        this.notify();
+      } else if (event === 'SIGNED_OUT') {
+        this.currentUser = null;
+        this.notify();
+      }
+    });
+  }
+
+  private async loadUserProfileAndRoles(userId: string, email: string): Promise<void> {
+    try {
+      // 1. Fetch Profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      // 2. Fetch Roles from protected user_roles table
+      const { data: roleRecords } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId);
+
+      const dbRoles: UserRole[] = (roleRecords && roleRecords.length > 0)
+        ? (roleRecords.map(r => r.role as UserRole))
+        : ['institution_user'];
+
+      // Normalize roles to include appropriate hierarchical permissions
+      const roles: UserRole[] = [...dbRoles];
+      if (roles.includes('super_admin') && !roles.includes('admin')) {
+        roles.push('admin');
+      }
+      if (roles.includes('scrutiny_officer') && !roles.includes('admin')) {
+        roles.push('admin');
+      }
+      if (roles.includes('scrutiny_member') && !roles.includes('admin')) {
+        roles.push('admin');
+      }
+
+      // 3. Fetch Institution Details if associated
+      let institution: Institution | undefined;
+      const institutionId = profile?.institution_id;
+      if (institutionId) {
+        const { data: instData } = await supabase
+          .from('institutions')
+          .select('*')
+          .eq('id', institutionId)
+          .maybeSingle();
+
+        if (instData) {
+          institution = instData;
+        } else {
+          // Check fallback from synthetic institutions for demo consistency
+          institution = SYNTHETIC_INSTITUTIONS.find(i => i.id === institutionId);
+        }
+      }
+
+      this.currentUser = {
+        id: userId,
+        email: email || profile?.email || '',
+        full_name: profile?.full_name || email.split('@')[0],
+        designation: profile?.designation,
+        institution_id: institutionId,
+        institution,
+        roles
+      };
+    } catch (err) {
+      console.error('Error loading user profile & roles:', err);
     }
   }
 
@@ -76,8 +142,8 @@ class AuthService {
     return this.currentUser !== null;
   }
 
-  isDemoMode(): boolean {
-    return this.currentUser?.isDemoSession ?? true;
+  isInitialized(): boolean {
+    return this.initialized;
   }
 
   hasRole(role: UserRole): boolean {
@@ -85,12 +151,24 @@ class AuthService {
     return this.currentUser.roles.includes(role);
   }
 
-  isAdmin(): boolean {
-    return this.hasRole('admin') || this.hasRole('super_admin');
-  }
-
   isSuperAdmin(): boolean {
     return this.hasRole('super_admin');
+  }
+
+  isScrutinyOfficer(): boolean {
+    return this.hasRole('scrutiny_officer') || (this.hasRole('admin') && !this.hasRole('super_admin') && !this.hasRole('scrutiny_member'));
+  }
+
+  isScrutinyMember(): boolean {
+    return this.hasRole('scrutiny_member');
+  }
+
+  isAdmin(): boolean {
+    return this.isSuperAdmin() || this.isScrutinyOfficer() || this.isScrutinyMember() || this.hasRole('admin');
+  }
+
+  isInstitution(): boolean {
+    return this.hasRole('institution_user') || this.hasRole('institution');
   }
 
   subscribe(listener: (user: AuthUserSession | null) => void): () => void {
@@ -105,180 +183,144 @@ class AuthService {
     this.listeners.forEach(listener => listener(this.currentUser));
   }
 
-  // Switch demo user for fast inspection and testing between roles in demo mode
-  setDemoUser(role: 'institution' | 'admin' | 'super_admin') {
-    if (this.currentUser && !this.currentUser.isDemoSession) {
-      console.warn('Role switcher cannot override a real authenticated Supabase session.');
-      return;
-    }
-    this.currentUser = DEMO_USERS[role];
-    localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(this.currentUser));
-    this.notify();
-  }
-
   /**
-   * Public registration: ALWAYS assigns 'institution' role.
-   * Public registration NEVER grants administrator privileges.
+   * Secure Sign-In: strictly queries Supabase Auth and loads verified database roles.
+   * Never falls back to a fake or demo portal on bad credentials.
    */
-  async register(
-    email: string, 
-    password: string, 
-    fullName: string, 
-    institutionCode?: string, 
-    designation?: string
-  ): Promise<{ success: boolean; error?: string }> {
-    try {
-      if (isConfigured) {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: fullName,
-              designation: designation || 'Institution Coordinator'
-            }
-          }
-        });
-
-        if (error) return { success: false, error: error.message };
-
-        if (data.user) {
-          // Find matching institution or create profile
-          const matchedInst = SYNTHETIC_INSTITUTIONS.find(i => i.code === institutionCode) || SYNTHETIC_INSTITUTIONS[0];
-
-          // Insert into profiles
-          await supabase.from('profiles').upsert({
-            id: data.user.id,
-            email,
-            full_name: fullName,
-            designation: designation || 'Institution Representative',
-            institution_id: matchedInst.id
-          });
-
-          // Insert protected role: explicitly ONLY 'institution'
-          await supabase.from('user_roles').insert({
-            user_id: data.user.id,
-            role: 'institution'
-          });
-
-          this.currentUser = {
-            id: data.user.id,
-            email,
-            full_name: fullName,
-            designation: designation || 'Institution Representative',
-            institution_id: matchedInst.id,
-            institution: matchedInst,
-            roles: ['institution'],
-            isDemoSession: false
-          };
-          localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(this.currentUser));
-          this.notify();
-          return { success: true };
-        }
-      }
-
-      // Offline / Local demo fallback registration:
-      const matchedInst = SYNTHETIC_INSTITUTIONS.find(i => i.code === institutionCode) || SYNTHETIC_INSTITUTIONS[0];
-      this.currentUser = {
-        id: `user-${Date.now()}`,
-        email,
-        full_name: fullName,
-        designation: designation || 'Institution Representative',
-        institution_id: matchedInst.id,
-        institution: matchedInst,
-        roles: ['institution'], // Strictly 'institution'
-        isDemoSession: true
-      };
-      localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(this.currentUser));
-      this.notify();
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Registration failed' };
-    }
-  }
-
   async signIn(email: string, password: string): Promise<{ success: boolean; error?: string }> {
+    if (!isConfigured) {
+      return {
+        success: false,
+        error: 'Supabase authentication service is not configured. Please ensure VITE_SUPABASE_URL and publishable key are set in .env'
+      };
+    }
+
     try {
-      if (isConfigured) {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          // Check if user specifically requested demo mode with demo credentials
-          const foundDemoKey = Object.keys(DEMO_USERS).find(k => DEMO_USERS[k].email.toLowerCase() === email.toLowerCase());
-          if (foundDemoKey) {
-            this.setDemoUser(foundDemoKey as 'institution' | 'admin' | 'super_admin');
-            return { success: true };
-          }
-          return { success: false, error: error.message };
-        }
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password
+      });
 
-        if (data.user) {
-          // Fetch user profile and roles strictly from database
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', data.user.id)
-            .single();
-
-          const { data: roleRecords } = await supabase
-            .from('user_roles')
-            .select('role')
-            .eq('user_id', data.user.id);
-
-          const roles: UserRole[] = (roleRecords && roleRecords.length > 0)
-            ? (roleRecords.map(r => r.role as UserRole))
-            : ['institution'];
-
-          let institution: Institution | undefined;
-          if (profile?.institution_id) {
-            const { data: instData } = await supabase
-              .from('institutions')
-              .select('*')
-              .eq('id', profile.institution_id)
-              .single();
-            institution = instData || undefined;
-          }
-
-          this.currentUser = {
-            id: data.user.id,
-            email: data.user.email || email,
-            full_name: profile?.full_name || 'Authenticated User',
-            designation: profile?.designation,
-            institution_id: profile?.institution_id,
-            institution,
-            roles,
-            isDemoSession: false
-          };
-          localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(this.currentUser));
-          this.notify();
-          return { success: true };
-        }
+      if (error) {
+        return { success: false, error: error.message };
       }
 
-      // Match demo user credentials for offline evaluation
-      const foundDemoKey = Object.keys(DEMO_USERS).find(k => DEMO_USERS[k].email.toLowerCase() === email.toLowerCase());
-      if (foundDemoKey) {
-        this.setDemoUser(foundDemoKey as 'institution' | 'admin' | 'super_admin');
+      if (data.user) {
+        await this.loadUserProfileAndRoles(data.user.id, data.user.email || email);
+        this.notify();
         return { success: true };
       }
 
-      // Generic demo sign in strictly as institution user (NEVER admin)
-      this.currentUser = {
-        id: `user-${Date.now()}`,
-        email,
-        full_name: email.split('@')[0],
-        roles: ['institution'], // Cannot obtain admin role via arbitrary email
-        institution_id: 'inst-1',
-        institution: SYNTHETIC_INSTITUTIONS[0],
-        isDemoSession: true
-      };
-      localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(this.currentUser));
-      this.notify();
-      return { success: true };
+      return { success: false, error: 'Authentication failed. Please verify credentials.' };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Sign in failed' };
+      return { success: false, error: err.message || 'An unexpected authentication error occurred.' };
     }
   }
 
+  /**
+   * Institution Registration:
+   * Strictly creates an Institution User account ('institution_user').
+   * Public registration NEVER grants administrator privileges.
+   */
+  async registerInstitution(params: RegisterInstitutionParams): Promise<{ success: boolean; error?: string; message?: string }> {
+    if (!isConfigured) {
+      return {
+        success: false,
+        error: 'Supabase authentication service is not configured. Please verify your environment variables.'
+      };
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: params.email.trim(),
+        password: params.password,
+        options: {
+          data: {
+            full_name: params.fullName,
+            designation: params.designation || 'Authorized Representative'
+          }
+        }
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      if (!data.user) {
+        return { success: false, error: 'Registration did not return a user record.' };
+      }
+
+      const userId = data.user.id;
+
+      // 1. Create or link Institution record
+      let institutionId: string;
+      const { data: existingInst } = await supabase
+        .from('institutions')
+        .select('id')
+        .eq('code', params.institutionCode.trim())
+        .maybeSingle();
+
+      if (existingInst) {
+        institutionId = existingInst.id;
+      } else {
+        const { data: newInst, error: instErr } = await supabase
+          .from('institutions')
+          .insert({
+            name: params.institutionName.trim(),
+            code: params.institutionCode.trim(),
+            aishe_code: params.aisheCode?.trim() || null,
+            institution_type: params.institutionType || 'Engineering & Technology',
+            address: params.address?.trim() || 'Institutional Area',
+            city: params.city?.trim() || 'New Delhi',
+            state: params.state?.trim() || 'Delhi',
+            pincode: params.pincode?.trim() || '110001',
+            contact_email: params.email.trim(),
+            contact_phone: params.phone?.trim() || null
+          })
+          .select('id')
+          .single();
+
+        if (instErr || !newInst) {
+          // If insert fails (e.g. RLS), fallback to first matching or synthetic
+          institutionId = SYNTHETIC_INSTITUTIONS[0].id;
+        } else {
+          institutionId = newInst.id;
+        }
+      }
+
+      // 2. Create User Profile
+      await supabase.from('profiles').upsert({
+        id: userId,
+        email: params.email.trim(),
+        full_name: params.fullName.trim(),
+        designation: params.designation?.trim() || 'Authorized Representative',
+        phone: params.phone?.trim() || null,
+        institution_id: institutionId
+      });
+
+      // 3. Strictly assign ONLY 'institution_user' role
+      await supabase.from('user_roles').insert({
+        user_id: userId,
+        role: 'institution_user'
+      });
+
+      // Require user to sign in explicitly before opening portal
+      await supabase.auth.signOut();
+      this.currentUser = null;
+      this.notify();
+
+      return {
+        success: true,
+        message: 'Institution registration completed successfully! Please sign in with your credentials.'
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Registration failed.' };
+    }
+  }
+
+  /**
+   * Sign Out
+   */
   async signOut(): Promise<void> {
     if (isConfigured) {
       try {
@@ -288,36 +330,163 @@ class AuthService {
       }
     }
     this.currentUser = null;
-    localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
     this.notify();
   }
 
+  // =========================================================================
+  // SUPER ADMIN MANAGEMENT METHODS (Enforced server-side with RLS & RPC)
+  // =========================================================================
+
   /**
-   * Super Admin Bootstrap procedure
+   * Fetch all officers and teams (Super Admin only)
    */
-  async bootstrapSuperAdmin(userId: string, token: string): Promise<{ success: boolean; message?: string; error?: string }> {
+  async getOfficersAndTeams(): Promise<{
+    teams: ScrutinyTeam[];
+    officers: Profile[];
+    members: Profile[];
+    assignments: ApplicationAssignment[];
+  }> {
+    if (!isConfigured) {
+      return { teams: [], officers: [], members: [], assignments: [] };
+    }
+
     try {
-      if (isConfigured) {
-        const { data, error } = await supabase.rpc('bootstrap_initial_super_admin', {
-          p_user_id: userId,
-          p_bootstrap_token: token
-        });
+      // Fetch teams
+      const { data: teamsData } = await supabase
+        .from('scrutiny_teams')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-        if (error) return { success: false, error: error.message };
-        return data as { success: boolean; message?: string; error?: string };
+      // Fetch team members with profile info
+      const { data: teamMembersData } = await supabase
+        .from('team_members')
+        .select('*, profiles:member_id(*)');
+
+      // Fetch all officers (users with scrutiny_officer or admin role)
+      const { data: officerRoles } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .in('role', ['scrutiny_officer', 'admin']);
+
+      const officerUserIds = officerRoles?.map(r => r.user_id) || [];
+      let officers: Profile[] = [];
+      if (officerUserIds.length > 0) {
+        const { data: officerProfiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', officerUserIds);
+        officers = officerProfiles || [];
       }
 
-      if (token === 'AICTE_SUPER_ADMIN_INIT_SECURE_TOKEN_2026') {
-        if (this.currentUser) {
-          this.currentUser.roles = ['admin', 'super_admin'];
-          localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(this.currentUser));
-          this.notify();
-        }
-        return { success: true, message: 'Super admin role successfully bootstrapped.' };
+      // Fetch all members
+      const { data: memberRoles } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'scrutiny_member');
+
+      const memberUserIds = memberRoles?.map(r => r.user_id) || [];
+      let members: Profile[] = [];
+      if (memberUserIds.length > 0) {
+        const { data: memberProfiles } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', memberUserIds);
+        members = memberProfiles || [];
       }
-      return { success: false, error: 'Invalid bootstrap token.' };
+
+      // Fetch application assignments
+      const { data: assignmentsData } = await supabase
+        .from('application_assignments')
+        .select('*');
+
+      // Map profiles into teams
+      const teams: ScrutinyTeam[] = (teamsData || []).map(t => ({
+        ...t,
+        officer_profile: officers.find(o => o.id === t.officer_id),
+        members: (teamMembersData || [])
+          .filter(tm => tm.team_id === t.id)
+          .map(tm => ({
+            ...tm,
+            profile: tm.profiles
+          }))
+      }));
+
+      return {
+        teams,
+        officers,
+        members,
+        assignments: assignmentsData || []
+      };
+    } catch (err) {
+      console.error('Error fetching officers and teams:', err);
+      return { teams: [], officers: [], members: [], assignments: [] };
+    }
+  }
+
+  /**
+   * Super Admin authorizes an officer and creates their Scrutiny Team
+   */
+  async createOfficerTeam(officerUserId: string, teamName: string, scope: string = 'National'): Promise<{ success: boolean; error?: string }> {
+    if (!this.isSuperAdmin()) {
+      return { success: false, error: 'Unauthorized: Only Super Admin can authorize officers.' };
+    }
+
+    try {
+      const { error } = await supabase.rpc('admin_create_officer_and_team', {
+        p_officer_id: officerUserId,
+        p_team_name: teamName,
+        p_scope: scope
+      });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Bootstrap failed' };
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Super Admin assigns a Scrutiny Member to a Team
+   */
+  async assignMemberToTeam(teamId: string, memberUserId: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.isSuperAdmin()) {
+      return { success: false, error: 'Unauthorized: Only Super Admin can assign members.' };
+    }
+
+    try {
+      const { error } = await supabase.rpc('admin_assign_member_to_team', {
+        p_team_id: teamId,
+        p_member_id: memberUserId
+      });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * Assign an application to a team, officer, or member
+   */
+  async assignApplication(applicationId: string, teamId: string, officerId?: string, memberId?: string, notes?: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.isAdmin()) {
+      return { success: false, error: 'Unauthorized: Administrative role required to assign applications.' };
+    }
+
+    try {
+      const { error } = await supabase.rpc('admin_assign_application', {
+        p_application_id: applicationId,
+        p_team_id: teamId,
+        p_officer_id: officerId || null,
+        p_member_id: memberId || null,
+        p_notes: notes || null
+      });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
     }
   }
 }

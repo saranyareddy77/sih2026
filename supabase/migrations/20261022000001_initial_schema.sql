@@ -66,6 +66,7 @@ create table if not exists public.applications (
       'Action Required',
       'Awaiting Official Review',
       'Under Review',
+      'Needs Review',
       'Resubmitted',
       'Authenticity Confirmation Pending',
       'Verification Complete',

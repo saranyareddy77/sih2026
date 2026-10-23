@@ -1,54 +1,107 @@
-// AICTE SmartVerify — Authentication & Initial Super Admin Bootstrap Page
+// AICTE SmartVerify — Authentication & Institution Registration
 // SIH Problem Statement 26261
 
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { 
   ShieldCheck, 
   Lock, 
+  Mail, 
   User, 
   Building2, 
-  Key, 
+  Eye, 
+  EyeOff, 
+  AlertCircle, 
   CheckCircle2, 
-  AlertCircle,
-  HelpCircle,
-  ArrowRight
+  ArrowRight,
+  ShieldAlert,
+  Hash,
+  MapPin,
+  Phone
 } from 'lucide-react';
-import { authService, DEMO_USERS } from '../services/authService';
-import { SYNTHETIC_INSTITUTIONS } from '../data/syntheticDemoData';
+import { authService } from '../services/authService';
+import { isConfigured } from '../services/supabaseClient';
 
 export const AuthPage: React.FC = () => {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<'signin' | 'register' | 'bootstrap'>('signin');
-  const [email, setEmail] = useState<string>('registrar@niatr-demo.edu.in');
-  const [password, setPassword] = useState<string>('DemoSecurePassword2026!');
-  const [fullName, setFullName] = useState<string>('Dr. Amitabh Verma');
-  const [institutionCode, setInstitutionCode] = useState<string>('1-1092837411');
-  const [designation, setDesignation] = useState<string>('Registrar');
-  const [bootstrapUserId, setBootstrapUserId] = useState<string>('');
-  const [bootstrapToken, setBootstrapToken] = useState<string>('AICTE_SUPER_ADMIN_INIT_SECURE_TOKEN_2026');
+  const location = useLocation();
+
+  // Mode derived from route: /register or /auth
+  const initialMode = location.pathname === '/register' ? 'register' : 'signin';
+  const [mode, setMode] = useState<'signin' | 'register'>(initialMode);
+
+  // Sync mode if route changes
+  useEffect(() => {
+    if (location.pathname === '/register') {
+      setMode('register');
+    } else if (location.pathname === '/auth') {
+      setMode('signin');
+    }
+  }, [location.pathname]);
+
+  // Form states — strictly empty initially (NO prefill)
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [fullName, setFullName] = useState<string>('');
+  const [designation, setDesignation] = useState<string>('');
+  const [institutionName, setInstitutionName] = useState<string>('');
+  const [institutionCode, setInstitutionCode] = useState<string>('');
+  const [aisheCode, setAisheCode] = useState<string>('');
+  const [institutionType, setInstitutionType] = useState<string>('Engineering & Technology');
+  const [phone, setPhone] = useState<string>('');
+  const [address, setAddress] = useState<string>('');
+  const [city, setCity] = useState<string>('');
+  const [state, setState] = useState<string>('');
+  const [pincode, setPincode] = useState<string>('');
 
   const [loading, setLoading] = useState<boolean>(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // If already logged in, redirect to permitted portal
+  useEffect(() => {
+    if (authService.isLoggedIn()) {
+      const user = authService.getCurrentUser();
+      if (user?.roles.includes('super_admin') || user?.roles.includes('scrutiny_officer') || user?.roles.includes('admin')) {
+        navigate('/admin', { replace: true });
+      } else {
+        navigate('/institution', { replace: true });
+      }
+    }
+  }, [navigate]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    if (!isConfigured) {
+      setErrorMessage('Database service is not configured. Please ensure VITE_SUPABASE_URL and publishable key are set in .env');
+      return;
+    }
+
+    if (!email.trim() || !password) {
+      setErrorMessage('Please enter both your email address and password.');
+      return;
+    }
+
     setLoading(true);
-    setMessage(null);
     try {
       const res = await authService.signIn(email, password);
       if (res.success) {
         const user = authService.getCurrentUser();
-        if (user?.roles.includes('admin')) {
+        if (user?.roles.includes('super_admin') || user?.roles.includes('scrutiny_officer') || user?.roles.includes('admin')) {
           navigate('/admin');
         } else {
           navigate('/institution');
         }
       } else {
-        setMessage({ type: 'error', text: res.error || 'Invalid credentials' });
+        setErrorMessage(res.error || 'Invalid email or password. Please verify your credentials.');
       }
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+      setErrorMessage(err.message || 'An unexpected error occurred during sign in.');
     } finally {
       setLoading(false);
     }
@@ -56,352 +109,454 @@ export const AuthPage: React.FC = () => {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    if (!isConfigured) {
+      setErrorMessage('Database service is not configured. Please verify your environment variables.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match. Please ensure both passwords match.');
+      return;
+    }
+
+    if (password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters in length.');
+      return;
+    }
+
+    if (!institutionName.trim() || !institutionCode.trim()) {
+      setErrorMessage('Institution Name and AICTE Permanent Institute ID are required.');
+      return;
+    }
+
     setLoading(true);
-    setMessage(null);
     try {
-      const res = await authService.register(
-        email, 
-        password, 
-        fullName, 
-        institutionCode, 
-        designation
-      );
+      const res = await authService.registerInstitution({
+        email,
+        password,
+        fullName,
+        institutionName,
+        institutionCode,
+        aisheCode,
+        institutionType,
+        designation,
+        phone,
+        address,
+        city,
+        state,
+        pincode
+      });
+
       if (res.success) {
-        setMessage({ 
-          type: 'success', 
-          text: 'Institution account created successfully! Public registration grants Institution User access.' 
-        });
-        setTimeout(() => navigate('/institution'), 1000);
+        setSuccessMessage(res.message || 'Institution account registered successfully! Please sign in below.');
+        // Switch to sign in view with email preserved
+        setMode('signin');
+        setPassword('');
+        setConfirmPassword('');
       } else {
-        setMessage({ type: 'error', text: res.error || 'Registration failed' });
+        setErrorMessage(res.error || 'Institution registration failed. Please check your inputs.');
       }
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+      setErrorMessage(err.message || 'An unexpected registration error occurred.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleBootstrapSuperAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage(null);
-    try {
-      const current = authService.getCurrentUser();
-      const targetId = bootstrapUserId.trim() || current?.id || 'super-admin-init';
-      const res = await authService.bootstrapSuperAdmin(targetId, bootstrapToken);
-
-      if (res.success) {
-        setMessage({ 
-          type: 'success', 
-          text: res.message || 'Super Admin initialized successfully. Access granted.' 
-        });
-        setTimeout(() => navigate('/admin'), 1200);
-      } else {
-        setMessage({ type: 'error', text: res.error || 'Bootstrap token rejected.' });
-      }
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleQuickDemoSwitch = (role: 'institution' | 'admin' | 'super_admin') => {
-    authService.setDemoUser(role);
-    if (role === 'admin' || role === 'super_admin') {
-      navigate('/admin');
-    } else {
-      navigate('/institution');
     }
   };
 
   return (
-    <div className="app-container" style={{ maxWidth: '520px', paddingTop: '36px' }}>
-      {/* Quick Demo Switcher Card for Instant Evaluation */}
-      <div style={{
-        backgroundColor: '#f8fafc',
-        border: '1px solid #cbd5e1',
-        borderRadius: '8px',
-        padding: '16px',
-        marginBottom: '24px',
-        textAlign: 'center'
-      }}>
-        <div style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
-          SIH EVALUATION ONE-CLICK DEMO LOGIN
-        </div>
-        <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '12px' }}>
-          Select a role to immediately explore the application with preloaded synthetic data:
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-          <button
-            onClick={() => handleQuickDemoSwitch('institution')}
-            className="btn btn-outline btn-sm"
-            style={{ fontSize: '0.75rem', padding: '8px 6px' }}
-          >
-            🏫 Institution
-          </button>
-          <button
-            onClick={() => handleQuickDemoSwitch('admin')}
-            className="btn btn-primary btn-sm"
-            style={{ fontSize: '0.75rem', padding: '8px 6px', backgroundColor: '#0284c7' }}
-          >
-            🛡️ AICTE Admin
-          </button>
-          <button
-            onClick={() => handleQuickDemoSwitch('super_admin')}
-            className="btn btn-primary btn-sm"
-            style={{ fontSize: '0.75rem', padding: '8px 6px', backgroundColor: '#1e3a8a' }}
-          >
-            👑 Super Admin
-          </button>
-        </div>
-      </div>
-
-      {/* Main Auth Card */}
-      <div className="card">
-        {/* Emblem & Portal Branding */}
-        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-          <div className="brand-emblem" style={{ margin: '0 auto 12px', width: '48px', height: '48px' }}>
-            <ShieldCheck size={28} />
+    <div className="auth-page-container">
+      <div className="auth-card">
+        {/* Brand Header */}
+        <div className="auth-card-header">
+          <div className="auth-brand-badge">
+            <ShieldCheck size={28} className="text-emerald-600" />
           </div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-primary)' }}>
-            AICTE SmartVerify Portal
-          </h2>
-          <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-            AI-Powered Application Validation &amp; Regulatory Compliance
+          <h1 className="auth-title">
+            {mode === 'signin' ? 'Sign In to SmartVerify' : 'Register Institution'}
+          </h1>
+          <p className="auth-subtitle">
+            {mode === 'signin' 
+              ? 'Enter your credentials to access the regulatory verification portal'
+              : 'Register an institutional account for AICTE regulatory approval submissions'}
           </p>
         </div>
 
-        {/* Mode Selector Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', marginBottom: '20px' }}>
-          <button
-            onClick={() => { setMode('signin'); setMessage(null); }}
-            style={{
-              flex: 1,
-              padding: '10px',
-              border: 'none',
-              background: 'none',
-              borderBottom: mode === 'signin' ? '2px solid var(--color-primary)' : 'none',
-              fontWeight: mode === 'signin' ? 700 : 500,
-              color: mode === 'signin' ? 'var(--color-primary)' : 'var(--text-muted)',
-              cursor: 'pointer'
-            }}
-          >
-            Sign In
-          </button>
-          <button
-            onClick={() => { setMode('register'); setMessage(null); }}
-            style={{
-              flex: 1,
-              padding: '10px',
-              border: 'none',
-              background: 'none',
-              borderBottom: mode === 'register' ? '2px solid var(--color-primary)' : 'none',
-              fontWeight: mode === 'register' ? 700 : 500,
-              color: mode === 'register' ? 'var(--color-primary)' : 'var(--text-muted)',
-              cursor: 'pointer'
-            }}
-          >
-            Register Institution
-          </button>
-          <button
-            onClick={() => { setMode('bootstrap'); setMessage(null); }}
-            style={{
-              flex: 1,
-              padding: '10px',
-              border: 'none',
-              background: 'none',
-              borderBottom: mode === 'bootstrap' ? '2px solid var(--color-primary)' : 'none',
-              fontWeight: mode === 'bootstrap' ? 700 : 500,
-              color: mode === 'bootstrap' ? 'var(--color-primary)' : 'var(--text-muted)',
-              cursor: 'pointer'
-            }}
-          >
-            Initial Admin
-          </button>
-        </div>
-
-        {/* Feedback Alert */}
-        {message && (
-          <div style={{
-            padding: '10px 14px',
-            borderRadius: '4px',
-            marginBottom: '16px',
-            fontSize: '0.8125rem',
-            backgroundColor: message.type === 'success' ? '#ecfdf5' : '#fef2f2',
-            border: `1px solid ${message.type === 'success' ? '#a7f3d0' : '#fecaca'}`,
-            color: message.type === 'success' ? '#065f46' : '#991b1b'
-          }}>
-            {message.text}
+        {/* Configuration Notice if Supabase not connected */}
+        {!isConfigured && (
+          <div className="auth-alert alert-warning">
+            <ShieldAlert size={18} className="alert-icon" />
+            <div>
+              <strong>Configuration Required:</strong> Supabase connection parameters are not detected. Please configure <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> in your environment file.
+            </div>
           </div>
         )}
 
-        {/* MODE 1: Sign In */}
-        {mode === 'signin' && (
-          <form onSubmit={handleSignIn}>
-            <div className="form-group">
-              <label className="form-label">Official Email Address:</label>
-              <input
-                type="email"
-                className="form-input"
-                required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="registrar@institution.edu.in"
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Password:</label>
-              <input
-                type="password"
-                className="form-input"
-                required
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-              />
-            </div>
-
-            <button 
-              type="submit" 
-              className="btn btn-primary"
-              style={{ width: '100%', padding: '10px' }}
-              disabled={loading}
-            >
-              {loading ? 'Authenticating...' : 'Sign In to Portal'}
-            </button>
-          </form>
+        {/* Success Alert */}
+        {successMessage && (
+          <div className="auth-alert alert-success">
+            <CheckCircle2 size={18} className="alert-icon" />
+            <div>{successMessage}</div>
+          </div>
         )}
 
-        {/* MODE 2: Institution Registration */}
-        {mode === 'register' && (
-          <form onSubmit={handleRegister}>
-            <div style={{
-              backgroundColor: '#fffbeb',
-              border: '1px solid #fde68a',
-              borderRadius: '4px',
-              padding: '10px',
-              fontSize: '0.75rem',
-              color: '#92400e',
-              marginBottom: '14px'
-            }}>
-              <strong>Security Policy:</strong> Public registration strictly creates an Institution User role. Administrator accounts cannot be created via public sign-up.
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Institution Representative Full Name:</label>
-              <input
-                type="text"
-                className="form-input"
-                required
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Official Email Address:</label>
-              <input
-                type="email"
-                className="form-input"
-                required
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Permanent AICTE Institute ID:</label>
-              <input
-                type="text"
-                className="form-input"
-                required
-                value={institutionCode}
-                onChange={e => setInstitutionCode(e.target.value)}
-                placeholder="e.g. 1-1092837411"
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Designation:</label>
-              <input
-                type="text"
-                className="form-input"
-                value={designation}
-                onChange={e => setDesignation(e.target.value)}
-                placeholder="Principal / Registrar / Coordinator"
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Create Password:</label>
-              <input
-                type="password"
-                className="form-input"
-                required
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-              />
-            </div>
-
-            <button 
-              type="submit" 
-              className="btn btn-primary"
-              style={{ width: '100%', padding: '10px' }}
-              disabled={loading}
-            >
-              {loading ? 'Registering...' : 'Register Institution Profile'}
-            </button>
-          </form>
+        {/* Error Alert */}
+        {errorMessage && (
+          <div className="auth-alert alert-error">
+            <AlertCircle size={18} className="alert-icon" />
+            <div>{errorMessage}</div>
+          </div>
         )}
 
-        {/* MODE 3: Initial Super Admin Bootstrap */}
-        {mode === 'bootstrap' && (
-          <form onSubmit={handleBootstrapSuperAdmin}>
-            <div style={{
-              backgroundColor: '#eff6ff',
-              border: '1px solid #bfdbfe',
-              borderRadius: '4px',
-              padding: '10px',
-              fontSize: '0.75rem',
-              color: '#1e40af',
-              marginBottom: '14px'
-            }}>
-              <strong>Initial Admin Bootstrap:</strong> Used during first-time system setup to authorize the primary Super Administrator using a secured server-side token. Once initialized, subsequent admins are authorized through the Super Admin console.
+        {/* Sign In Form */}
+        {mode === 'signin' ? (
+          <form onSubmit={handleSignIn} className="auth-form">
+            <div className="form-group">
+              <label className="form-label" htmlFor="signin-email">
+                Email Address
+              </label>
+              <div className="input-with-icon">
+                <Mail size={16} className="input-icon" />
+                <input
+                  id="signin-email"
+                  type="email"
+                  required
+                  placeholder="name@institution.edu.in or officer@aicte-india.org"
+                  className="form-input"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  autoComplete="email"
+                />
+              </div>
             </div>
 
             <div className="form-group">
-              <label className="form-label">Bootstrap Security Token:</label>
-              <input
-                type="password"
-                className="form-input"
-                required
-                value={bootstrapToken}
-                onChange={e => setBootstrapToken(e.target.value)}
-                placeholder="AICTE_SUPER_ADMIN_INIT_SECURE_TOKEN_2026"
-              />
+              <div className="label-with-aside">
+                <label className="form-label" htmlFor="signin-password">
+                  Password
+                </label>
+              </div>
+              <div className="input-with-icon">
+                <Lock size={16} className="input-icon" />
+                <input
+                  id="signin-password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  placeholder="••••••••••••"
+                  className="form-input"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  className="input-action-btn"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Target User ID (Optional, defaults to current session):</label>
-              <input
-                type="text"
-                className="form-input"
-                value={bootstrapUserId}
-                onChange={e => setBootstrapUserId(e.target.value)}
-                placeholder="auth.users UUID"
-              />
-            </div>
-
-            <button 
-              type="submit" 
-              className="btn btn-primary"
-              style={{ width: '100%', padding: '10px', backgroundColor: '#1e3a8a' }}
+            <button
+              type="submit"
               disabled={loading}
+              className="btn btn-emerald-primary btn-block"
             >
-              {loading ? 'Authorizing Super Admin...' : 'Authorize Initial Super Admin'}
+              {loading ? 'Authenticating...' : 'Sign In'}
+              <ArrowRight size={16} />
             </button>
+
+            <div className="auth-switch-link">
+              <span>Need to register your institution? </span>
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  setMode('register');
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+              >
+                Register Institution
+              </button>
+            </div>
+          </form>
+        ) : (
+          /* Institution Registration Form */
+          <form onSubmit={handleRegister} className="auth-form">
+            <div className="form-notice">
+              <Building2 size={16} className="text-emerald-600" />
+              <span>Public registration creates an authorized <strong>Institution User</strong> account with access restricted strictly to your institution.</span>
+            </div>
+
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-fullname">
+                  Full Name of Authorized Officer *
+                </label>
+                <div className="input-with-icon">
+                  <User size={16} className="input-icon" />
+                  <input
+                    id="reg-fullname"
+                    type="text"
+                    required
+                    placeholder="e.g. Dr. Ramesh Kumar"
+                    className="form-input"
+                    value={fullName}
+                    onChange={e => setFullName(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-designation">
+                  Designation *
+                </label>
+                <input
+                  id="reg-designation"
+                  type="text"
+                  required
+                  placeholder="e.g. Registrar / Principal"
+                  className="form-input"
+                  value={designation}
+                  onChange={e => setDesignation(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-email">
+                  Official Email Address *
+                </label>
+                <div className="input-with-icon">
+                  <Mail size={16} className="input-icon" />
+                  <input
+                    id="reg-email"
+                    type="email"
+                    required
+                    placeholder="registrar@institution.edu.in"
+                    className="form-input"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    autoComplete="email"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-phone">
+                  Contact Phone Number
+                </label>
+                <div className="input-with-icon">
+                  <Phone size={16} className="input-icon" />
+                  <input
+                    id="reg-phone"
+                    type="tel"
+                    placeholder="+91 98765 43210"
+                    className="form-input"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="reg-instname">
+                Full Legal Name of Institution *
+              </label>
+              <div className="input-with-icon">
+                <Building2 size={16} className="input-icon" />
+                <input
+                  id="reg-instname"
+                  type="text"
+                  required
+                  placeholder="e.g. National Institute of Advanced Technology & Research"
+                  className="form-input"
+                  value={institutionName}
+                  onChange={e => setInstitutionName(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="form-grid-3">
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-instcode">
+                  AICTE Permanent ID *
+                </label>
+                <div className="input-with-icon">
+                  <Hash size={16} className="input-icon" />
+                  <input
+                    id="reg-instcode"
+                    type="text"
+                    required
+                    placeholder="1-XXXXXXXXXX"
+                    className="form-input"
+                    value={institutionCode}
+                    onChange={e => setInstitutionCode(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-aishe">
+                  AISHE Code (if assigned)
+                </label>
+                <input
+                  id="reg-aishe"
+                  type="text"
+                  placeholder="C-XXXXX"
+                  className="form-input"
+                  value={aisheCode}
+                  onChange={e => setAisheCode(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-insttype">
+                  Institution Type
+                </label>
+                <select
+                  id="reg-insttype"
+                  className="form-input"
+                  value={institutionType}
+                  onChange={e => setInstitutionType(e.target.value)}
+                >
+                  <option value="Engineering & Technology">Engineering &amp; Technology</option>
+                  <option value="Polytechnic & Diploma">Polytechnic &amp; Diploma</option>
+                  <option value="Management & Technical">Management &amp; Technical</option>
+                  <option value="Pharmacy & Health Sciences">Pharmacy &amp; Health Sciences</option>
+                  <option value="Architecture & Planning">Architecture &amp; Planning</option>
+                  <option value="Applied Arts & Crafts">Applied Arts &amp; Crafts</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="form-grid-3">
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-city">
+                  City *
+                </label>
+                <input
+                  id="reg-city"
+                  type="text"
+                  required
+                  placeholder="e.g. Pune"
+                  className="form-input"
+                  value={city}
+                  onChange={e => setCity(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-state">
+                  State *
+                </label>
+                <input
+                  id="reg-state"
+                  type="text"
+                  required
+                  placeholder="e.g. Maharashtra"
+                  className="form-input"
+                  value={state}
+                  onChange={e => setState(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-pincode">
+                  PIN Code *
+                </label>
+                <input
+                  id="reg-pincode"
+                  type="text"
+                  required
+                  placeholder="e.g. 411038"
+                  className="form-input"
+                  value={pincode}
+                  onChange={e => setPincode(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-password">
+                  Password (min 6 characters) *
+                </label>
+                <div className="input-with-icon">
+                  <Lock size={16} className="input-icon" />
+                  <input
+                    id="reg-password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    placeholder="••••••••••••"
+                    className="form-input"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    className="input-action-btn"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="reg-confirm-password">
+                  Confirm Password *
+                </label>
+                <div className="input-with-icon">
+                  <Lock size={16} className="input-icon" />
+                  <input
+                    id="reg-confirm-password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    placeholder="••••••••••••"
+                    className="form-input"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn btn-emerald-primary btn-block"
+            >
+              {loading ? 'Creating Account...' : 'Register Institution Account'}
+              <ArrowRight size={16} />
+            </button>
+
+            <div className="auth-switch-link">
+              <span>Already registered? </span>
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  setMode('signin');
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+              >
+                Sign In
+              </button>
+            </div>
           </form>
         )}
       </div>
