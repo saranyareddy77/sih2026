@@ -49,6 +49,85 @@ export interface ApplicationAssignment {
   member?: Profile;
 }
 
+export type BureauCell =
+  | 'Regulation Bureau (RB)'
+  | 'Public Grievance Redressal Cell (PGRC)'
+  | 'Vigilance Cell'
+  | 'Approval Bureau'
+  | 'Regional Office (Northern)'
+  | 'Regional Office (Western)'
+  | 'Regional Office (Southern)'
+  | 'Regional Office (Eastern)'
+  | 'Regional Office (Central)'
+  | 'Regional Office (South-Western)'
+  | 'Other Bureau/Cell';
+
+export type ComplaintStatus =
+  | 'Received'
+  | 'Pending'
+  | 'Under Process'
+  | 'Awaiting Information'
+  | 'Transferred'
+  | 'Escalated'
+  | 'Disposed'
+  | 'Closed';
+
+export type ComplaintPriority = 'Urgent' | 'High' | 'Medium' | 'Low';
+
+export type ComplaintCategory =
+  | 'Capitation Fee & Excess Fees'
+  | 'Faculty Shortage & Non-Payment'
+  | 'Infrastructure & Safety Deficiencies'
+  | 'Unauthorized Course / Intake'
+  | 'Ragging & Student Harassment'
+  | 'Admission Irregularities'
+  | 'Deceptive Advertisements'
+  | 'Non-Refund of Caution Money / Certificates Withheld'
+  | 'Other Grievance';
+
+export interface ComplaintTransfer {
+  id: string;
+  complaint_id: string;
+  from_bureau: string;
+  to_bureau: string;
+  transfer_reason: string;
+  transferred_by: string;
+  transferred_at: string;
+}
+
+export interface ComplaintEscalation {
+  id: string;
+  complaint_id: string;
+  escalated_to: string;
+  escalation_reason: string;
+  escalated_by: string;
+  escalated_at: string;
+}
+
+export interface OverlapAlert {
+  id: string;
+  institution_id: string;
+  institution_name: string;
+  aicte_id: string;
+  complaint_ids: string[];
+  bureaus_involved: string[];
+  reason: string;
+  match_type: 'exact_aicte_id' | 'normalized_name' | 'category_similarity';
+  status: 'Potential' | 'Confirmed' | 'Dismissed' | 'Needs Review';
+  reviewed_by?: string;
+  reviewed_at?: string;
+  review_notes?: string;
+  created_at: string;
+}
+
+export interface ComplaintDisposal {
+  decision: 'Substantiated - Directive Issued' | 'Resolved upon Rectification' | 'Unsubstantiated / Closed' | 'Referred to State Authority';
+  disposal_order_number?: string;
+  remarks: string;
+  disposed_by: string;
+  disposed_at: string;
+}
+
 export type ApplicationStatus =
   | 'Draft'
   | 'Submitted'
@@ -60,7 +139,15 @@ export type ApplicationStatus =
   | 'Resubmitted'
   | 'Authenticity Confirmation Pending'
   | 'Verification Complete'
-  | 'Review Completed';
+  | 'Review Completed'
+  | 'Received'
+  | 'Pending'
+  | 'Under Process'
+  | 'Awaiting Information'
+  | 'Transferred'
+  | 'Escalated'
+  | 'Disposed'
+  | 'Closed';
 
 export type ValidationOutcome = 'Passed' | 'Failed' | 'Needs Review' | 'Not Checked';
 
@@ -100,6 +187,14 @@ export interface Institution {
   contact_email: string;
   contact_phone?: string;
   website?: string;
+  region?: string;
+  district?: string;
+  total_complaints?: number;
+  pending_complaints?: number;
+  disposed_complaints?: number;
+  active_bureaus?: string[];
+  latest_complaint_date?: string;
+  related_complaint_ids?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -355,4 +450,31 @@ export interface Application {
   status_requests?: StatusUpdateRequest[];
   infrastructure_evidence?: InfrastructureEvidenceItem[];
   authority_verifications?: Record<string, AuthorityVerificationResult>;
+
+  // Complaint Monitoring & Cross-Bureau Coordination fields
+  case_id?: string;
+  bureau?: BureauCell | string;
+  receiving_bureau?: BureauCell | string;
+  assigned_officer?: string;
+  assigned_officer_id?: string;
+  complaint_category?: ComplaintCategory | string;
+  complaint_description?: string;
+  complainant_type?: 'Student' | 'Faculty' | 'Parent' | 'Citizen' | 'Official Anonymous';
+  complainant_name?: string;
+  priority?: ComplaintPriority;
+  date_received?: string;
+  expected_disposal_date?: string;
+  days_remaining?: number;
+  is_overdue?: boolean;
+  last_action_taken?: string;
+  last_action_timestamp?: string;
+  next_action_required?: string;
+  transfers?: ComplaintTransfer[];
+  escalations?: ComplaintEscalation[];
+  related_complaint_ids?: string[];
+  overlap_status?: 'None' | 'Potential Overlap Detected' | 'Confirmed Overlap - Coordinated' | 'Dismissed Overlap';
+  overlap_alert?: OverlapAlert;
+  disposal_decision?: ComplaintDisposal;
 }
+
+export type ComplaintCase = Application;

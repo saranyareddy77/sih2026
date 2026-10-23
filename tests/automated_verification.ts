@@ -18,12 +18,25 @@
 // 14. Infrastructure Evidence Triage & Statutory Disclaimers
 // 15. Zero Fabricated OCR / Mock Score Assurance
 
+// Polyfill localStorage in Node test environment
+if (typeof globalThis.localStorage === 'undefined') {
+  const store = new Map<string, string>();
+  (globalThis as any).localStorage = {
+    getItem: (key: string) => store.get(key) || null,
+    setItem: (key: string, val: string) => store.set(key, String(val)),
+    removeItem: (key: string) => store.delete(key),
+    clear: () => store.clear(),
+  };
+}
+
 import { validationService, normalizeText, REQUIRED_DOCUMENTS_BY_TYPE } from '../src/services/validationService.ts';
 import { regulatoryRuleEngine } from '../src/services/regulatoryRuleEngine.ts';
 import { authorityVerificationService, SyntheticStateRegistryProvider } from '../src/services/authorityVerificationService.ts';
 import { inspectFileHeader } from '../src/services/pdfExtractionService.ts';
 import { SYNTHETIC_APPLICATIONS, SYNTHETIC_INSTITUTIONS } from '../src/data/syntheticDemoData.ts';
 import { Application, ApplicationDocument, ExtractedFieldItem } from '../src/types/index.ts';
+import { overlapDetectionService } from '../src/services/overlapDetectionService.ts';
+import { complaintService } from '../src/services/complaintService.ts';
 
 // Color formatting for console
 const GREEN = '\x1b[32m';
@@ -361,6 +374,48 @@ assert(firstInfra.clarity_score !== undefined && firstInfra.clarity_score > 90, 
 console.log(`\n${BOLD}12. Zero-Fabrication Compliance Check${RESET}`);
 const syntheticNotice = 'SYNTHETIC DEMO DATA — NOT AN OFFICIAL DOCUMENT';
 assert(syntheticNotice.includes('SYNTHETIC'), 'Demonstration data prominently marked with synthetic watermark');
+
+// -------------------------------------------------------------------------
+// 13. Cross-Bureau Overlap Detection (Mandatory Demo Scenario)
+// -------------------------------------------------------------------------
+console.log(`\n${BOLD}13. Cross-Bureau Overlap Detection Engine${RESET}`);
+const allDemoCases = [...SYNTHETIC_APPLICATIONS];
+const casePGRC = allDemoCases.find(c => (c.case_id || c.application_number) === 'PGRC-2026-001');
+const caseRB = allDemoCases.find(c => (c.case_id || c.application_number) === 'RB-2026-014');
+
+assert(casePGRC !== undefined, 'Mandatory demo Case 1 (PGRC-2026-001) exists in dataset');
+assert(caseRB !== undefined, 'Mandatory demo Case 2 (RB-2026-014) exists in dataset');
+
+const overlapResult = overlapDetectionService.getOverlapForComplaint(casePGRC!, allDemoCases);
+assert(overlapResult.hasOverlap === true, 'Automatic overlap detected between Case 1 and Case 2');
+assert(overlapResult.alertText === 'Potential Overlapping Cases — Coordination Required', 'Alert headline matches exact required wording: "Potential Overlapping Cases — Coordination Required"');
+assert(overlapResult.overlappingCases.some(c => (c.case_id || c.application_number) === 'RB-2026-014'), 'Overlapping cases identify RB-2026-014');
+assert(casePGRC?.institution?.code === caseRB?.institution?.code, 'Both cases match on exact AICTE Permanent ID (1-1092837411)');
+
+// -------------------------------------------------------------------------
+// 14. Inter-Bureau Transfer & Case Lifecycle Operations
+// -------------------------------------------------------------------------
+console.log(`\n${BOLD}14. Inter-Bureau Transfer & Case Lifecycle${RESET}`);
+const transferredCase = allDemoCases.find(c => c.status === 'Transferred');
+assert(transferredCase !== undefined, 'Dataset contains transferred complaint (RO-W-2026-009)');
+assert((transferredCase?.transfers || []).length > 0, 'Transfer record exists with from/to bureau and reason');
+assert(transferredCase?.transfers?.[0].from_bureau === 'Public Grievance Redressal Cell (PGRC)', 'Transfer origin captured (PGRC)');
+assert(transferredCase?.transfers?.[0].to_bureau === 'Regulation Bureau (RB)', 'Transfer destination captured (RB)');
+
+const disposedCase = allDemoCases.find(c => c.status === 'Disposed');
+assert(disposedCase !== undefined, 'Dataset contains formally disposed complaint (PGRC-2026-005)');
+assert(disposedCase?.disposal_decision !== undefined, 'Formal disposal order details recorded');
+assert(disposedCase?.disposal_decision?.disposal_order_number !== undefined, 'Formal disposal order number generated');
+
+// -------------------------------------------------------------------------
+// 15. Central Institution Registry & Metrics Mutual Consistency
+// -------------------------------------------------------------------------
+console.log(`\n${BOLD}15. Central Institution Registry & Mutually Consistent Metrics${RESET}`);
+const metrics = complaintService.calculateMetrics(allDemoCases);
+assert(metrics.totalComplaints === allDemoCases.length, 'Total complaints count equals dataset count');
+assert(metrics.totalComplaints >= metrics.pendingCases + metrics.disposedCases, 'Total is consistent with pending and disposed counts');
+assert(metrics.overdueCases >= 1, 'Overdue case flagged based on expected disposal SLA deadline');
+assert(metrics.potentialOverlaps >= 2, 'Potential overlap cases count detected across bureaus');
 
 // Summary output
 console.log(`\n${BOLD}${CYAN}================================================================${RESET}`);

@@ -27,16 +27,16 @@ export const LandingPage: React.FC = () => {
         <div className="landing-hero-content">
           <div className="landing-badge">
             <ShieldCheck size={14} className="text-emerald-600" />
-            <span>AICTE Regulatory Scrutiny Platform</span>
+            <span>AICTE Central Complaint Monitoring Platform</span>
           </div>
 
           <h1 className="landing-hero-title">
-            Smarter Scrutiny.<br />
-            Clearer Compliance.
+            Unified Scrutiny.<br />
+            Cross-Bureau Coordination.
           </h1>
 
           <p className="landing-hero-subtext">
-            AI-assisted document validation and regulatory compliance checks for institutional applications, with transparent findings and accountable human review.
+            Integrated institution complaint monitoring and status dashboard across Regulation Bureau (RB), Public Grievance Redressal Cell (PGRC), and Regional Desks — with automated overlap detection.
           </p>
 
           <div className="landing-hero-actions">
@@ -52,7 +52,7 @@ export const LandingPage: React.FC = () => {
           <div className="landing-trust-strip">
             <div className="trust-item">
               <CheckCircle2 size={16} className="trust-icon" />
-              <span>10 Verification Factors</span>
+              <span>Cross-Bureau Overlap Alert</span>
             </div>
             <div className="trust-item">
               <Lock size={16} className="trust-icon" />
@@ -60,12 +60,12 @@ export const LandingPage: React.FC = () => {
             </div>
             <div className="trust-item">
               <Scale size={16} className="trust-icon" />
-              <span>APH 2026-27 Norms</span>
+              <span>SLA Target Tracking</span>
             </div>
           </div>
         </div>
 
-        {/* Visual Composition: Clean Application Document & Checklist Mockup */}
+        {/* Visual Composition: Clean Case Document & Checklist Mockup */}
         <div className="landing-visual-wrapper">
           <div className="landing-doc-card">
             {/* Card Header */}
@@ -74,12 +74,12 @@ export const LandingPage: React.FC = () => {
                 <FileText size={20} />
               </div>
               <div>
-                <div className="doc-card-title">Land Title &amp; Use Deed — Scrutiny Dossier</div>
-                <div className="doc-card-meta">AICTE Approval Process Handbook • 2026-2027 Academic Year</div>
+                <div className="doc-card-title">Cross-Bureau Case Overlap Analysis</div>
+                <div className="doc-card-meta">ABC Engineering College • PGRC-2026-001 vs RB-2026-014</div>
               </div>
               <span className="doc-card-status-badge">
                 <CheckCircle2 size={13} />
-                Validated
+                Coordinated
               </span>
             </div>
 
@@ -90,10 +90,10 @@ export const LandingPage: React.FC = () => {
                   <CheckCircle2 size={16} />
                 </div>
                 <div className="check-details">
-                  <div className="check-title">Document Completeness &amp; Resolution</div>
-                  <div className="check-desc">All required regulatory certificates uploaded, DPI contrast verified</div>
+                  <div className="check-title">Cross-Bureau Overlap Detection</div>
+                  <div className="check-desc">Concurrent cases in PGRC and Regulation Bureau flagged automatically</div>
                 </div>
-                <span className="check-tag">Pass</span>
+                <span className="check-tag">Alert</span>
               </div>
 
               <div className="checklist-item passed">
@@ -101,8 +101,8 @@ export const LandingPage: React.FC = () => {
                   <CheckCircle2 size={16} />
                 </div>
                 <div className="check-details">
-                  <div className="check-title">SHA-256 Checksum &amp; Anti-Duplication</div>
-                  <div className="check-desc">Cryptographic fingerprint verified unique across all slots</div>
+                  <div className="check-title">AICTE Permanent ID Verification</div>
+                  <div className="check-desc">Exact match on 1-1092837411 prevents duplicate investigation efforts</div>
                 </div>
                 <span className="check-tag">Verified</span>
               </div>
@@ -112,10 +112,10 @@ export const LandingPage: React.FC = () => {
                   <CheckCircle2 size={16} />
                 </div>
                 <div className="check-details">
-                  <div className="check-title">Cross-Document Entity Consistency</div>
-                  <div className="check-desc">Permanent Institute ID and institution name match registration records</div>
+                  <div className="check-title">Action Trail &amp; Inter-Bureau Transfer</div>
+                  <div className="check-desc">Immutable chronological log of desk handoffs and disposal decisions</div>
                 </div>
-                <span className="check-tag">Consistent</span>
+                <span className="check-tag">Logged</span>
               </div>
 
               <div className="checklist-item review">

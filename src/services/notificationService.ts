@@ -42,21 +42,27 @@ class NotificationService {
   private listeners: Array<(items: NotificationItem[]) => void> = [];
 
   constructor() {
-    const saved = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
-    if (saved) {
-      try {
-        this.notifications = JSON.parse(saved);
-      } catch (e) {
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
+      if (saved) {
+        try {
+          this.notifications = JSON.parse(saved);
+        } catch (e) {
+          this.notifications = INITIAL_NOTIFICATIONS;
+        }
+      } else {
         this.notifications = INITIAL_NOTIFICATIONS;
+        this.saveLocal();
       }
     } else {
       this.notifications = INITIAL_NOTIFICATIONS;
-      this.saveLocal();
     }
   }
 
   private saveLocal() {
-    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(this.notifications));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(this.notifications));
+    }
     this.notify();
   }
 

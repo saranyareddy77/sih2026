@@ -1,5 +1,5 @@
-// AICTE SmartVerify — Evidence-First Scrutiny Workbench
-// SIH Problem Statement 26261
+// AICTE SmartVerify — Complaint Detail & Cross-Bureau Coordination Workbench
+// SIH Problem Statement: Integrated Institution Complaint Monitoring and Status Dashboard for AICTE
 
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
@@ -32,81 +32,87 @@ import {
   ChevronRight,
   AlertCircle,
   Download,
-  Info
+  Info,
+  ArrowLeftRight,
+  AlertOctagon,
+  Link2,
+  Share2,
+  FolderSync
 } from 'lucide-react';
-import { regulatoryRuleEngine } from '../services/regulatoryRuleEngine';
-import { normalizeText } from '../services/validationService';
-import { SYNTHETIC_AUTHORITY_DISCLAIMER } from '../services/authorityVerificationService';
 import { 
   Application, 
   ApplicationDocument, 
-  ValidationFinding, 
-  ValidationOutcome,
-  ApplicationStatus,
-  InfrastructureEvidenceItem
+  ComplaintStatus, 
+  ComplaintPriority,
+  BureauCell,
+  ComplaintTransfer,
+  ComplaintEscalation,
+  OverlapAlert
 } from '../types';
 import { applicationService } from '../services/applicationService';
-import { documentService } from '../services/documentService';
-import { statusRequestService } from '../services/statusRequestService';
+import { complaintService } from '../services/complaintService';
+import { overlapDetectionService } from '../services/overlapDetectionService';
 import { authService } from '../services/authService';
 import { DocumentViewer } from '../components/DocumentViewer';
-import { ValidationFindingsPanel } from '../components/ValidationFindingsPanel';
-import { StatusHistoryTimeline } from '../components/StatusHistoryTimeline';
-import { REQUIRED_DOCUMENTS_BY_TYPE } from '../services/validationService';
 
 type DrawerType = 'cross_comparison' | 'authority' | 'infrastructure' | 'rules' | 'audit_history' | 'clarifications' | null;
 
 export const ApplicationDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [app, setApp] = useState<Application | null>(null);
+  const [allComplaints, setAllComplaints] = useState<Application[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedDocument, setSelectedDocument] = useState<ApplicationDocument | null>(null);
   
-  // Secondary Inspector Drawer state (keeps the 3-panel workbench permanently visible)
+  // Secondary Inspector Drawer state
   const [activeDrawer, setActiveDrawer] = useState<DrawerType>(null);
 
-  // Infrastructure evidence state
-  const [selectedInfraCategory, setSelectedInfraCategory] = useState<string>('All');
-  const [editingInfraId, setEditingInfraId] = useState<string | null>(null);
-  const [infraReviewStatus, setInfraReviewStatus] = useState<'Verified' | 'Deficiency Found'>('Verified');
-  const [infraReviewNotes, setInfraReviewNotes] = useState<string>('');
-  const [isUpdatingInfra, setIsUpdatingInfra] = useState<boolean>(false);
+  // Transfer modal state
+  const [showTransferModal, setShowTransferModal] = useState<boolean>(false);
+  const [transferToBureau, setTransferToBureau] = useState<string>('Regulation Bureau (RB)');
+  const [transferReason, setTransferReason] = useState<string>('');
+  const [isTransferring, setIsTransferring] = useState<boolean>(false);
 
-  // Modals & form states
-  const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
-  const [selectedUploadDocType, setSelectedUploadDocType] = useState<string>('Land Use Certificate');
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  // Escalate modal state
+  const [showEscalateModal, setShowEscalateModal] = useState<boolean>(false);
+  const [escalateTo, setEscalateTo] = useState<string>('Member Secretary & Bureau Head (RB)');
+  const [escalationReason, setEscalationReason] = useState<string>('');
+  const [isEscalating, setIsEscalating] = useState<boolean>(false);
 
-  // Rectification modal state
-  const [showRectificationModal, setShowRectificationModal] = useState<boolean>(false);
-  const [rectificationDocType, setRectificationDocType] = useState<string>('Fire Safety Certificate');
-  const [rectificationFile, setRectificationFile] = useState<File | null>(null);
-  const [rectificationNote, setRectificationNote] = useState<string>('');
-  const [isRectifying, setIsRectifying] = useState<boolean>(false);
-  const [rectificationError, setRectificationError] = useState<string | null>(null);
+  // Disposal modal state
+  const [showDisposalModal, setShowDisposalModal] = useState<boolean>(false);
+  const [disposalDecision, setDisposalDecision] = useState<'Substantiated - Directive Issued' | 'Resolved upon Rectification' | 'Unsubstantiated / Closed' | 'Referred to State Authority'>('Resolved upon Rectification');
+  const [disposalRemarks, setDisposalRemarks] = useState<string>('');
+  const [disposalOrderNo, setDisposalOrderNo] = useState<string>('');
+  const [isDisposing, setIsDisposing] = useState<boolean>(false);
 
-  // Admin decision state
-  const [showAdminDecisionModal, setShowAdminDecisionModal] = useState<boolean>(false);
-  const [adminDecisionType, setAdminDecisionType] = useState<'Approved' | 'Rejected' | 'Action Required' | 'Needs Further Inspection'>('Approved');
-  const [adminDecisionReason, setAdminDecisionReason] = useState<string>('');
-  const [isSubmittingDecision, setIsSubmittingDecision] = useState<boolean>(false);
+  // Link related case modal state
+  const [showLinkModal, setShowLinkModal] = useState<boolean>(false);
+  const [selectedCaseToLink, setSelectedCaseToLink] = useState<string>('');
+  const [linkRemarks, setLinkRemarks] = useState<string>('');
+  const [isLinking, setIsLinking] = useState<boolean>(false);
 
-  // Clarification request state
-  const [showClarificationModal, setShowClarificationModal] = useState<boolean>(false);
-  const [requestSubject, setRequestSubject] = useState<string>('');
-  const [requestMessage, setRequestMessage] = useState<string>('');
-  const [replyTextMap, setReplyTextMap] = useState<Record<string, string>>({});
+  // Add Remark modal state
+  const [showRemarkModal, setShowRemarkModal] = useState<boolean>(false);
+  const [remarkText, setRemarkText] = useState<string>('');
+  const [isAddingRemark, setIsAddingRemark] = useState<boolean>(false);
+
+  // Inter-Bureau message note state
+  const [interBureauRecipient, setInterBureauRecipient] = useState<string>('Regulation Bureau (RB)');
+  const [interBureauSubject, setInterBureauSubject] = useState<string>('');
+  const [interBureauMessage, setInterBureauMessage] = useState<string>('');
 
   const currentUser = authService.getCurrentUser();
   const isAdmin = authService.isAdmin();
 
-  const loadApplication = async () => {
+  const loadData = async () => {
     if (!id) return;
     setLoading(true);
     try {
       const data = await applicationService.getApplicationById(id);
+      const all = await applicationService.getApplications();
+      setAllComplaints(all);
+
       if (data) {
         setApp(data);
         if (data.documents && data.documents.length > 0 && !selectedDocument) {
@@ -121,14 +127,14 @@ export const ApplicationDetail: React.FC = () => {
   };
 
   useEffect(() => {
-    loadApplication();
+    loadData();
   }, [id]);
 
   if (loading) {
     return (
       <div className="app-container" style={{ textAlign: 'center', padding: '80px 20px', color: 'var(--text-muted)' }}>
         <RefreshCw size={28} className="spin" style={{ marginBottom: '12px', opacity: 0.7 }} />
-        <p style={{ fontSize: '0.9375rem' }}>Loading institutional approval dossier &amp; extracted evidence...</p>
+        <p style={{ fontSize: '0.9375rem' }}>Loading institutional complaint record &amp; evaluating cross-bureau overlap...</p>
       </div>
     );
   }
@@ -137,246 +143,213 @@ export const ApplicationDetail: React.FC = () => {
     return (
       <div className="app-container" style={{ textAlign: 'center', padding: '80px 20px' }}>
         <AlertTriangle size={48} color="#dc2626" style={{ marginBottom: '12px' }} />
-        <h2>Application Not Found</h2>
+        <h2>Complaint Not Found</h2>
         <p style={{ marginBottom: '16px', color: 'var(--text-muted)' }}>
-          The requested application dossier could not be located in the current repository.
+          The requested complaint docket could not be located in the repository.
         </p>
-        <Link to="/" className="btn btn-primary">Return to Command Center</Link>
+        <Link to="/admin" className="btn btn-primary">Return to Dashboard</Link>
       </div>
     );
   }
 
-  // Handle Dynamic Validation Recalculation
-  const handleRerunValidation = async () => {
-    try {
-      const result = await applicationService.revalidateApplication(
-        app.id,
-        currentUser ? `${currentUser.full_name} (${currentUser.roles[0]})` : 'System'
-      );
-      setApp({ ...result.app });
-      alert(`Validation recalculated! Outcome: ${result.overallOutcome}. Evaluated ${result.findings.length} checks.`);
-    } catch (e: any) {
-      alert(`Error running validation: ${e.message}`);
-    }
-  };
+  // Evaluate Overlap Detection for this complaint
+  const overlapInfo = overlapDetectionService.getOverlapForComplaint(app, allComplaints);
+  const hasOverlap = overlapInfo.hasOverlap || (app.related_complaint_ids && app.related_complaint_ids.length > 0);
 
-  // Handle File Upload
-  const handleFileUpload = async (e: React.FormEvent) => {
+  // Other active cases concerning this institution across bureaus
+  const concurrentInstitutionCases = allComplaints.filter(c => 
+    c.id !== app.id && 
+    (c.institution_id === app.institution_id || 
+     (c.institution?.code && app.institution?.code && c.institution.code.replace(/[^a-zA-Z0-9]/g, '') === app.institution.code.replace(/[^a-zA-Z0-9]/g, '')))
+  );
+
+  // Handle Inter-Bureau Case Transfer
+  const handleExecuteTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadFile) {
-      setUploadError('Please select a PDF, JPG, or PNG file.');
+    if (!transferReason.trim()) {
+      alert('A formal statutory transfer reason is required.');
       return;
     }
-
-    setIsUploading(true);
-    setUploadError(null);
-
+    setIsTransferring(true);
     try {
-      const { app: updated, document: newDoc } = await applicationService.uploadDocument(
+      const updated = await complaintService.transferComplaint(
         app.id,
-        selectedUploadDocType,
-        uploadFile,
-        currentUser?.full_name || 'Institution User'
+        app.bureau || 'Public Grievance Redressal Cell (PGRC)',
+        transferToBureau,
+        transferReason,
+        currentUser?.full_name || 'Authorized Scrutiny Officer'
       );
       setApp({ ...updated });
-      setSelectedDocument(newDoc);
-      setShowUploadModal(false);
-      setUploadFile(null);
-      alert(`Document uploaded for "${selectedUploadDocType}". Real-time extraction and rule evaluation completed.`);
+      setShowTransferModal(false);
+      setTransferReason('');
+      alert(`Case transferred successfully to ${transferToBureau}!`);
+      await loadData();
     } catch (err: any) {
-      setUploadError(err.message || 'Upload failed.');
+      alert(err.message);
     } finally {
-      setIsUploading(false);
+      setIsTransferring(false);
     }
   };
 
-  // Handle Application Submission
-  const handleSubmitApplication = async () => {
-    if (confirm('Are you sure you want to submit this approval dossier to the AICTE Scrutiny Committee?')) {
-      try {
-        const updated = await applicationService.submitApplication(
-          app.id,
-          currentUser?.full_name || 'Institution Representative'
-        );
-        setApp({ ...updated });
-        alert(`Application submitted! Status: ${updated.status}. Outcome: ${updated.overall_validation_outcome}`);
-      } catch (err: any) {
-        alert(err.message);
-      }
-    }
-  };
-
-  const handleResubmitApplication = async () => {
-    const note = prompt('Please enter a brief explanation of the corrections made:');
-    if (note) {
-      try {
-        const updated = await applicationService.resubmitApplication(
-          app.id,
-          currentUser?.full_name || 'Institution Representative',
-          note
-        );
-        setApp({ ...updated });
-        alert('Application resubmitted with corrections.');
-      } catch (err: any) {
-        alert(err.message);
-      }
-    }
-  };
-
-  // Handle Admin Decision Recording
-  const handleRecordAdminDecision = async () => {
-    if (!adminDecisionReason.trim()) {
-      alert('A formal scrutiny reason is required before recording a decision.');
+  // Handle Escalation
+  const handleExecuteEscalation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!escalationReason.trim()) {
+      alert('An escalation reason is required.');
       return;
     }
-
-    setIsSubmittingDecision(true);
+    setIsEscalating(true);
     try {
-      const updated = await applicationService.recordAdminReview(
+      const updated = await complaintService.escalateComplaint(
         app.id,
+        escalateTo,
+        escalationReason,
+        currentUser?.full_name || 'Senior Scrutiny Officer'
+      );
+      setApp({ ...updated });
+      setShowEscalateModal(false);
+      setEscalationReason('');
+      alert(`Case successfully escalated to ${escalateTo}!`);
+      await loadData();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsEscalating(false);
+    }
+  };
+
+  // Handle Disposal Decision
+  const handleExecuteDisposal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!disposalRemarks.trim()) {
+      alert('Official disposal remarks and findings summary are required.');
+      return;
+    }
+    setIsDisposing(true);
+    try {
+      const updated = await complaintService.recordDisposal(
+        app.id,
+        disposalDecision,
+        disposalRemarks,
+        disposalOrderNo,
+        currentUser?.full_name || 'Designated Inquiring Authority'
+      );
+      setApp({ ...updated });
+      setShowDisposalModal(false);
+      setDisposalRemarks('');
+      setDisposalOrderNo('');
+      alert(`Complaint formally marked Disposed (${disposalDecision})!`);
+      await loadData();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsDisposing(false);
+    }
+  };
+
+  // Handle Linking Related Complaints
+  const handleExecuteLinkCases = async (targetCaseId: string) => {
+    if (!targetCaseId) return;
+    setIsLinking(true);
+    try {
+      const { case1 } = await complaintService.linkRelatedComplaints(
+        app.id,
+        targetCaseId,
+        currentUser?.full_name || 'Coordination Desk Officer',
+        `Mutual cross-bureau coordination established between ${app.case_id || app.application_number} and ${targetCaseId}.`
+      );
+      setApp({ ...case1 });
+      setShowLinkModal(false);
+      alert(`Cases successfully linked! Mutual cross-bureau coordination confirmed.`);
+      await loadData();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  // Handle Overlap Decision (Confirmed, Dismissed, Needs Review)
+  const handleReviewOverlapDecision = async (decision: 'Confirmed' | 'Dismissed' | 'Needs Review') => {
+    const notes = prompt(`Enter coordination notes for marking overlap as "${decision}":`, `Case reviewed by ${currentUser?.full_name || 'Officer'}`);
+    if (notes === null) return;
+    try {
+      const updated = await complaintService.reviewOverlap(
+        app.id,
+        decision,
         currentUser?.full_name || 'Scrutiny Officer',
-        currentUser?.id,
-        'Final Decision',
-        adminDecisionReason,
-        adminDecisionType
+        notes
       );
       setApp({ ...updated });
-      setShowAdminDecisionModal(false);
-      setAdminDecisionReason('');
-      alert(`Scrutiny Decision recorded: ${adminDecisionType}`);
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setIsSubmittingDecision(false);
-    }
-  };
-
-  // Handle Field Correction
-  const handleFieldCorrection = async (documentId: string, fieldName: string, correctedValue: string) => {
-    try {
-      const updated = await applicationService.correctDocumentField(
-        app.id,
-        documentId,
-        fieldName,
-        correctedValue,
-        currentUser?.full_name || 'Authorized Reviewer'
-      );
-      setApp({ ...updated });
-      const updatedDoc = updated.documents?.find(d => d.id === documentId);
-      if (updatedDoc) setSelectedDocument(updatedDoc);
-      alert(`Field "${fieldName}" updated to "${correctedValue}". Application re-evaluated against regulatory rules.`);
+      alert(`Overlap decision recorded: ${decision}`);
+      await loadData();
     } catch (err: any) {
       alert(err.message);
     }
   };
 
-  // Handle Trigger Authority Verification
-  const handleTriggerAuthority = async (docType: string) => {
-    try {
-      const { app: updated, result } = await applicationService.runAuthorityVerification(
-        app.id,
-        docType,
-        currentUser?.full_name || 'Scrutiny Officer'
-      );
-      setApp({ ...updated });
-      alert(`Issuing Authority Gateway Query: ${docType} -> Status: ${result.status}`);
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  // Open Rectification Modal
-  const openRectificationModal = (docType: string) => {
-    setRectificationDocType(docType);
-    setRectificationFile(null);
-    setRectificationNote('');
-    setRectificationError(null);
-    setShowRectificationModal(true);
-  };
-
-  // Handle Rectification Upload
-  const handleRectificationUpload = async (e: React.FormEvent) => {
+  // Handle Add Officer Remark
+  const handleAddOfficerRemark = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rectificationFile) {
-      setRectificationError('Please select a replacement PDF or image file.');
-      return;
-    }
-
-    setIsRectifying(true);
-    setRectificationError(null);
-
+    if (!remarkText.trim()) return;
+    setIsAddingRemark(true);
     try {
-      const { app: updated, document: newDoc } = await applicationService.uploadReplacementDocument(
+      const updated = await complaintService.addRemark(
         app.id,
-        rectificationDocType,
-        rectificationFile,
-        currentUser?.full_name || 'Institution User',
-        rectificationNote
+        remarkText,
+        currentUser?.full_name || 'Desk Officer'
       );
-
       setApp({ ...updated });
-      setSelectedDocument(newDoc);
-      setShowRectificationModal(false);
-      setRectificationFile(null);
-      setRectificationNote('');
-      alert(`Replacement document uploaded for "${rectificationDocType}"! Previous version archived. Re-run validation completed.`);
+      setShowRemarkModal(false);
+      setRemarkText('');
+      alert('Officer remark recorded in case history.');
+      await loadData();
     } catch (err: any) {
-      setRectificationError(err.message || 'Rectification upload failed.');
+      alert(err.message);
     } finally {
-      setIsRectifying(false);
+      setIsAddingRemark(false);
     }
   };
 
-  // Submit Status Clarification
-  const handleSubmitClarification = async () => {
-    if (!requestSubject || !requestMessage) {
-      alert('Please enter both subject and message.');
-      return;
-    }
-
+  // Quick Status Transition
+  const handleQuickStatusChange = async (newStatus: ComplaintStatus) => {
+    const reason = prompt(`Reason for changing complaint status to "${newStatus}":`, `Status updated by ${currentUser?.full_name || 'Desk In-Charge'}`);
+    if (reason === null) return;
     try {
-      await statusRequestService.submitRequest(
+      const updated = await complaintService.updateStatus(
         app.id,
-        app.institution_id,
-        requestSubject,
-        requestMessage,
-        currentUser?.id
+        newStatus,
+        currentUser?.full_name || 'Desk Officer',
+        reason
       );
-      setShowClarificationModal(false);
-      setRequestSubject('');
-      setRequestMessage('');
-      await loadApplication();
-      alert('Clarification request submitted to scrutiny desk.');
+      setApp({ ...updated });
+      alert(`Complaint status updated to ${newStatus}`);
+      await loadData();
     } catch (err: any) {
       alert(err.message);
     }
   };
 
-  // Infrastructure review update handler
-  const handleSaveInfraReview = async (evidenceId: string) => {
-    if (!app) return;
-    setIsUpdatingInfra(true);
-    try {
-      const updated = await applicationService.updateInfrastructureEvidenceReview(
-        app.id,
-        evidenceId,
-        infraReviewStatus,
-        infraReviewNotes
-      );
-      setApp({ ...updated });
-      setEditingInfraId(null);
-      alert('Infrastructure review recorded successfully.');
-    } catch (err: any) {
-      alert(err.message || 'Failed to update review.');
-    } finally {
-      setIsUpdatingInfra(false);
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'Disposed':
+      case 'Closed':
+        return <span className="badge badge-passed">{status}</span>;
+      case 'Escalated':
+        return <span className="badge badge-failed">{status}</span>;
+      case 'Transferred':
+        return <span className="badge badge-needs-review" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>Transferred</span>;
+      case 'Under Process':
+        return <span className="badge badge-info">Under Process</span>;
+      case 'Awaiting Information':
+        return <span className="badge badge-needs-review">Awaiting Information</span>;
+      default:
+        return <span className="badge badge-draft">{status || 'Pending'}</span>;
     }
   };
 
-  const requiredDocList = REQUIRED_DOCUMENTS_BY_TYPE[app.application_type] || REQUIRED_DOCUMENTS_BY_TYPE['Extension of Approval (EoA)'];
-  const uploadedCount = (app.documents || []).length;
-  const failedFindingsCount = (app.findings || []).filter(f => f.result === 'Failed').length;
-  const reviewFindingsCount = (app.findings || []).filter(f => f.result === 'Needs Review').length;
+  const caseId = app.case_id || app.application_number;
+  const currentBureau = app.bureau || app.receiving_bureau || 'Public Grievance Redressal Cell (PGRC)';
 
   return (
     <div className="app-container" style={{ paddingBottom: '60px' }}>
@@ -388,100 +361,96 @@ export const ApplicationDetail: React.FC = () => {
           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
           <ArrowLeft size={14} />
-          Back to {isAdmin ? 'Scrutiny Queue' : 'My Applications'}
+          Back to {isAdmin ? 'Complaints Queue' : 'Institution Dashboard'}
         </Link>
 
         {/* Global Action Toolbar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <button 
-            onClick={handleRerunValidation} 
+            onClick={loadData} 
             className="btn btn-outline btn-sm"
-            title="Recalculate 10 verification factors on current files"
+            title="Refresh complaint data"
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             <RefreshCw size={14} />
-            Re-run 10-Factor Engine
+            Refresh
           </button>
 
-          {!isAdmin && (
-            <>
-              <button 
-                onClick={() => setShowUploadModal(true)} 
-                className="btn btn-outline btn-sm"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-              >
-                <Upload size={14} />
-                Upload New Document
-              </button>
-
-              {app.status === 'Draft' ? (
-                <button 
-                  onClick={handleSubmitApplication} 
-                  className="btn btn-primary btn-sm"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Send size={14} />
-                  Submit Application
-                </button>
-              ) : app.status === 'Action Required' ? (
-                <button 
-                  onClick={handleResubmitApplication} 
-                  className="btn btn-primary btn-sm"
-                  style={{ backgroundColor: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Send size={14} />
-                  Resubmit Corrections
-                </button>
-              ) : null}
-
-              <button 
-                onClick={() => setShowClarificationModal(true)} 
-                className="btn btn-outline btn-sm"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-              >
-                <HelpCircle size={14} />
-                Ask Clarification
-              </button>
-            </>
-          )}
+          <button 
+            onClick={() => setShowRemarkModal(true)} 
+            className="btn btn-outline btn-sm"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Edit2 size={14} />
+            Add Remark
+          </button>
 
           {isAdmin && (
-            <button 
-              onClick={() => setShowAdminDecisionModal(true)} 
-              className="btn btn-primary btn-sm"
-              style={{ 
-                backgroundColor: '#0f2d59', 
-                display: 'inline-flex', 
-                alignItems: 'center', 
-                gap: '6px',
-                boxShadow: '0 2px 6px rgba(15, 45, 89, 0.25)'
-              }}
-            >
-              <UserCheck size={14} />
-              Record Committee Decision
-            </button>
+            <>
+              <button 
+                onClick={() => setShowTransferModal(true)} 
+                className="btn btn-outline btn-sm"
+                style={{ borderColor: '#d97706', color: '#92400e', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                title="Transfer case to another Bureau/Cell"
+              >
+                <ArrowLeftRight size={14} />
+                Transfer to Another Bureau
+              </button>
+
+              <button 
+                onClick={() => setShowEscalateModal(true)} 
+                className="btn btn-outline btn-sm"
+                style={{ borderColor: '#dc2626', color: '#b91c1c', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                title="Escalate complaint to senior authority"
+              >
+                <AlertOctagon size={14} />
+                Escalate Complaint
+              </button>
+
+              <button 
+                onClick={() => setShowDisposalModal(true)} 
+                className="btn btn-primary btn-sm"
+                style={{ 
+                  backgroundColor: '#059669', 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '6px'
+                }}
+              >
+                <UserCheck size={14} />
+                Record Formal Disposal
+              </button>
+            </>
           )}
         </div>
       </div>
 
-      {/* Application Dossier Overview Banner */}
+      {/* Complaint Dossier Overview Banner */}
       <div className="card" style={{ padding: '18px 22px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'wrap' }}>
               <h1 style={{ fontSize: '1.35rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                {app.application_number}
+                {caseId}
               </h1>
-              {app.status === 'Review Completed' ? (
-                <span className="badge badge-passed">Review Completed</span>
-              ) : app.status === 'Action Required' ? (
-                <span className="badge badge-failed">Action Required</span>
-              ) : app.status === 'Awaiting Official Review' ? (
-                <span className="badge badge-info">Awaiting Official Review</span>
-              ) : app.status === 'Needs Review' ? (
-                <span className="badge badge-needs-review">Needs Review</span>
-              ) : (
-                <span className="badge badge-draft">{app.status}</span>
+              {getStatusBadge(app.status)}
+              {hasOverlap && (
+                <span 
+                  className="badge" 
+                  style={{ 
+                    backgroundColor: '#fef3c7', 
+                    color: '#b45309', 
+                    border: '1px solid #fde68a',
+                    fontWeight: 700
+                  }}
+                >
+                  ⚠️ Overlap Detected
+                </span>
+              )}
+              {app.is_overdue && (
+                <span className="badge badge-failed">
+                  Overdue SLA
+                </span>
               )}
             </div>
 
@@ -490,45 +459,46 @@ export const ApplicationDetail: React.FC = () => {
             </div>
 
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-              <span>Permanent ID: <code>{app.institution?.code}</code></span>
-              <span>Category: <strong>{app.application_type}</strong></span>
-              <span>AY: <strong>{app.academic_year}</strong></span>
-              <span>Submitted: {app.submission_date ? new Date(app.submission_date).toLocaleDateString() : 'Draft Mode'}</span>
+              <span>Permanent AICTE ID: <code>{app.institution?.code || '1-1092837411'}</code></span>
+              <span>Responsible Bureau: <strong>{currentBureau}</strong></span>
+              <span>Category: <strong>{app.complaint_category || 'Grievance'}</strong></span>
+              <span>Received: <strong>{app.date_received || new Date(app.created_at).toLocaleDateString()}</strong></span>
+              <span>Target Disposal: <strong>{app.expected_disposal_date || '30 days'}</strong></span>
             </div>
           </div>
 
-          {/* Validation Engine Outcome Badge */}
+          {/* SLA & Current Responsibility Card */}
           <div style={{
-            backgroundColor: app.overall_validation_outcome === 'Passed' ? '#ecfdf5' : app.overall_validation_outcome === 'Failed' ? '#fef2f2' : '#fffbeb',
-            border: `1px solid ${app.overall_validation_outcome === 'Passed' ? '#a7f3d0' : app.overall_validation_outcome === 'Failed' ? '#fecaca' : '#fde68a'}`,
+            backgroundColor: app.is_overdue ? '#fef2f2' : hasOverlap ? '#fffbeb' : '#f0fdf4',
+            border: `1px solid ${app.is_overdue ? '#fecaca' : hasOverlap ? '#fde68a' : '#bbf7d0'}`,
             borderRadius: '8px',
             padding: '10px 16px',
             textAlign: 'right',
             minWidth: '220px'
           }}>
             <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.04em' }}>
-              Automated Check Status
+              SLA &amp; Bureau Status
             </div>
             <div style={{
               fontSize: '1rem',
               fontWeight: 700,
-              color: app.overall_validation_outcome === 'Passed' ? '#065f46' : app.overall_validation_outcome === 'Failed' ? '#991b1b' : '#92400e',
+              color: app.is_overdue ? '#991b1b' : hasOverlap ? '#92400e' : '#166534',
               marginTop: '2px'
             }}>
-              {app.overall_validation_outcome === 'Passed'
-                ? 'Automated Checks Passed'
-                : app.overall_validation_outcome === 'Failed'
-                ? 'Deficiencies Detected'
-                : 'Needs Human Scrutiny'}
+              {app.is_overdue 
+                ? 'SLA Target Exceeded' 
+                : hasOverlap 
+                ? 'Cross-Bureau Attention' 
+                : 'Within Compliance SLA'}
             </div>
             <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {failedFindingsCount} Failed • {reviewFindingsCount} Review • {(app.findings || []).filter(f => f.result === 'Passed').length} Passed
+              Officer: {app.assigned_officer || 'Desk In-Charge'}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Secondary Workflow Toolbar (Drawers) — Kept persistent above the 3-panel workbench */}
+      {/* Secondary Workflow Toolbar (Drawers) */}
       <div style={{ 
         display: 'flex', 
         gap: '8px', 
@@ -538,7 +508,7 @@ export const ApplicationDetail: React.FC = () => {
         alignItems: 'center'
       }}>
         <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: '4px' }}>
-          Inspector Tools:
+          Coordination Tools:
         </span>
 
         <button
@@ -547,35 +517,7 @@ export const ApplicationDetail: React.FC = () => {
           style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
           <Layers size={13} />
-          Cross-Document Matrix
-          {failedFindingsCount > 0 && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#dc2626' }} />}
-        </button>
-
-        <button
-          onClick={() => setActiveDrawer('authority')}
-          className={`btn btn-sm ${activeDrawer === 'authority' ? 'btn-primary' : 'btn-outline'}`}
-          style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-        >
-          <Shield size={13} />
-          Authority Gateway ({Object.keys(app.authority_verifications || {}).length})
-        </button>
-
-        <button
-          onClick={() => setActiveDrawer('infrastructure')}
-          className={`btn btn-sm ${activeDrawer === 'infrastructure' ? 'btn-primary' : 'btn-outline'}`}
-          style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-        >
-          <Camera size={13} />
-          Infrastructure Evidence ({app.infrastructure_evidence?.length || 0})
-        </button>
-
-        <button
-          onClick={() => setActiveDrawer('rules')}
-          className={`btn btn-sm ${activeDrawer === 'rules' ? 'btn-primary' : 'btn-outline'}`}
-          style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-        >
-          <BookOpen size={13} />
-          Applicable APH Rules
+          Cross-Bureau Overlap Analysis ({concurrentInstitutionCases.length} Concurrent)
         </button>
 
         <button
@@ -584,7 +526,7 @@ export const ApplicationDetail: React.FC = () => {
           style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
           <Clock size={13} />
-          Audit History ({app.status_history?.length || 0})
+          Action &amp; Transfer Trail ({app.status_history?.length || 0})
         </button>
 
         <button
@@ -593,480 +535,515 @@ export const ApplicationDetail: React.FC = () => {
           style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
           <MessageSquare size={13} />
-          Clarifications
+          Inter-Bureau Communications
+        </button>
+
+        <button
+          onClick={() => setActiveDrawer('rules')}
+          className={`btn btn-sm ${activeDrawer === 'rules' ? 'btn-primary' : 'btn-outline'}`}
+          style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+        >
+          <BookOpen size={13} />
+          SLA Timelines &amp; AICTE Norms
         </button>
       </div>
 
-      {/* SIGNATURE 3-PANEL PERSISTENT SCRUTINY WORKBENCH */}
+      {/* SIGNATURE 3-PANEL PERSISTENT COMPLAINT WORKBENCH */}
       <div className="workbench-layout">
-        {/* PANEL 1: Application Dossier & Document Checklist */}
-        <div className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', height: '720px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div>
-              <h3 style={{ fontSize: '0.875rem', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-primary)' }}>
-                Required Attachments
-              </h3>
-              <p style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-                {uploadedCount} of {requiredDocList.length} documents uploaded
-              </p>
-            </div>
-            <span className="badge badge-info" style={{ fontSize: '0.6875rem' }}>
-              APH 2026-27
-            </span>
+        {/* PANEL 1: Institution Details & Complaint Metadata (LEFT PANEL) */}
+        <div className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', height: '720px', overflowY: 'auto' }}>
+          <div style={{ marginBottom: '14px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-primary)' }}>
+              Institution Profile
+            </h3>
+            <p style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+              Central Institution Registry Details
+            </p>
           </div>
 
-          {/* Document list */}
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '2px' }}>
-            {requiredDocList.map(reqType => {
-              const uploadedDoc = (app.documents || []).find(d => d.document_type === reqType && d.is_active_version !== false);
-              const isSelected = selectedDocument?.id === uploadedDoc?.id && uploadedDoc !== undefined;
-              const hasDocIssue = uploadedDoc?.is_corrupt || (app.findings || []).some(f => f.document_id === uploadedDoc?.id && f.result === 'Failed');
+          {/* Institution Data Card */}
+          <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid var(--border-subtle)', marginBottom: '14px' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+              {app.institution?.name}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#0369a1', marginTop: '3px', fontWeight: 600 }}>
+              AICTE ID: {app.institution?.code}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              {app.institution?.address}, {app.institution?.city}, {app.institution?.state} — {app.institution?.pincode}
+            </div>
+            <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Region: <strong>{app.institution?.region || 'Northern'}</strong> • Type: {app.institution?.institution_type}
+            </div>
+          </div>
 
-              return (
-                <div
-                  key={reqType}
-                  onClick={() => uploadedDoc && setSelectedDocument(uploadedDoc)}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: '6px',
-                    border: isSelected 
-                      ? '2px solid var(--color-primary)' 
-                      : hasDocIssue 
-                      ? '1px solid #fecaca' 
-                      : uploadedDoc 
-                      ? '1px solid var(--border-subtle)' 
-                      : '1px dashed #fca5a5',
-                    backgroundColor: isSelected 
-                      ? '#eff6ff' 
-                      : hasDocIssue 
-                      ? '#fff1f2' 
-                      : uploadedDoc 
-                      ? '#ffffff' 
-                      : '#fef2f2',
-                    cursor: uploadedDoc ? 'pointer' : 'default',
-                    transition: 'all 0.15s ease',
-                    position: 'relative'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '6px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.8125rem', color: uploadedDoc ? 'var(--text-primary)' : '#991b1b' }}>
-                      {reqType}
+          {/* Case Metadata */}
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
+              Case Metadata
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '6px', fontSize: '0.8125rem' }}>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Complainant:</span>{' '}
+                <strong>{app.complainant_name || 'Concerned Stakeholder'}</strong> ({app.complainant_type || 'Student'})
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Assigned Desk:</span>{' '}
+                <strong>{currentBureau}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Lead Officer:</span>{' '}
+                <strong>{app.assigned_officer || 'Scrutiny Officer'}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Priority:</span>{' '}
+                <span className="badge badge-info" style={{ fontSize: '0.6875rem' }}>{app.priority || 'Medium'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Linked Complaints */}
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+              Linked Cases ({app.related_complaint_ids?.length || 0})
+            </div>
+            {app.related_complaint_ids && app.related_complaint_ids.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {app.related_complaint_ids.map(lid => (
+                  <div key={lid} style={{ padding: '6px 10px', backgroundColor: '#eff6ff', borderRadius: '4px', border: '1px solid #bfdbfe', fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 700, color: '#1d4ed8' }}>🔗 {lid}</span>
+                    <span style={{ fontSize: '0.6875rem', color: '#1e40af' }}>Coordinated</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                No cross-bureau complaints linked yet.
+              </div>
+            )}
+          </div>
+
+          {/* Supporting Evidence Documents */}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+              Supporting Evidence Attachments ({(app.documents || []).length})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {(app.documents || []).map(doc => {
+                const isSelected = selectedDocument?.id === doc.id;
+                return (
+                  <div
+                    key={doc.id}
+                    onClick={() => setSelectedDocument(doc)}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '4px',
+                      border: isSelected ? '2px solid var(--color-primary)' : '1px solid var(--border-subtle)',
+                      backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {doc.document_type}
                     </div>
-                    {uploadedDoc ? (
-                      uploadedDoc.is_corrupt ? (
-                        <span className="badge badge-failed" style={{ fontSize: '0.625rem' }}>Corrupt</span>
-                      ) : hasDocIssue ? (
-                        <span className="badge badge-failed" style={{ fontSize: '0.625rem' }}>Deficient</span>
-                      ) : (
-                        <CheckCircle2 size={14} color="#059669" />
-                      )
-                    ) : (
-                      <span className="badge badge-failed" style={{ fontSize: '0.625rem' }}>Missing</span>
-                    )}
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {doc.original_name} • {(doc.file_size / 1024).toFixed(0)} KB
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* PANEL 2: Complaint Allegations & Supporting Documents Viewer (CENTER PANEL) */}
+        <div className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', height: '720px', overflowY: 'auto' }}>
+          <div style={{ marginBottom: '12px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-primary)' }}>
+              Complaint Narrative &amp; Evidence
+            </h3>
+            <p style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+              Allegations statement, verified documents, and investigation trail
+            </p>
+          </div>
+
+          {/* Formal Complaint Statement Box */}
+          <div style={{ backgroundColor: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '14px', marginBottom: '14px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+              Specific Grievance Allegation
+            </div>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-primary)', margin: 0, lineHeight: 1.5 }}>
+              {app.complaint_description || 'Detailed complaint narrative registered with AICTE.'}
+            </p>
+          </div>
+
+          {/* Next Action Required & Last Action Taken */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+            <div style={{ backgroundColor: '#f8fafc', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                Last Action Taken
+              </div>
+              <div style={{ fontSize: '0.8125rem', color: 'var(--text-primary)', marginTop: '4px', fontWeight: 600 }}>
+                {app.last_action_taken || 'Complaint docketed'}
+              </div>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                {app.last_action_timestamp ? new Date(app.last_action_timestamp).toLocaleString() : ''}
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: '#eff6ff', padding: '10px 12px', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+              <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#1e40af', textTransform: 'uppercase' }}>
+                Next Action Required
+              </div>
+              <div style={{ fontSize: '0.8125rem', color: '#1e3a8a', marginTop: '4px', fontWeight: 600 }}>
+                {app.next_action_required || 'Review of institution explanation response.'}
+              </div>
+            </div>
+          </div>
+
+          {/* Document Preview Canvas */}
+          <div style={{ flex: 1, minHeight: '340px' }}>
+            <DocumentViewer 
+              document={selectedDocument}
+              onCorrectField={() => {}}
+              onTriggerAuthorityVerification={() => {}}
+            />
+          </div>
+        </div>
+
+        {/* PANEL 3: Overlap Detection, Deadlines & Authorized Actions (RIGHT PANEL) */}
+        <div className="card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', height: '720px', overflowY: 'auto' }}>
+          <div style={{ marginBottom: '12px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-primary)' }}>
+              Cross-Bureau Overlap &amp; Actions
+            </h3>
+            <p style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+              Automated overlap detection and authorized decisions
+            </p>
+          </div>
+
+          {/* THE MANDATORY OVERLAP DETECTION CARD */}
+          <div style={{
+            backgroundColor: hasOverlap ? '#fffbeb' : '#f8fafc',
+            border: `1px solid ${hasOverlap ? '#fde68a' : 'var(--border-subtle)'}`,
+            borderRadius: '6px',
+            padding: '12px',
+            marginBottom: '14px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <AlertTriangle size={16} color={hasOverlap ? '#d97706' : '#64748b'} />
+              <div style={{ fontWeight: 700, fontSize: '0.8125rem', color: hasOverlap ? '#92400e' : 'var(--text-primary)' }}>
+                {hasOverlap ? 'Potential Overlapping Cases — Coordination Required' : 'No Active Overlap Detected'}
+              </div>
+            </div>
+
+            {hasOverlap ? (
+              <>
+                <p style={{ fontSize: '0.75rem', color: '#92400e', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                  Institution <strong>{app.institution?.name}</strong> (AICTE ID: {app.institution?.code}) has concurrent active complaints across multiple Bureaus/Cells.
+                </p>
+
+                {/* Overlapping cases list */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                  {/* Current case */}
+                  <div style={{ backgroundColor: '#ffffff', padding: '8px 10px', borderRadius: '4px', border: '1px solid #fde68a', fontSize: '0.75rem' }}>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>This Case: {caseId}</div>
+                    <div style={{ color: 'var(--text-muted)' }}>Bureau: <strong>{currentBureau}</strong> • Status: {app.status}</div>
                   </div>
 
-                  {uploadedDoc ? (
-                    <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                        v{uploadedDoc.version || 1} • {(uploadedDoc.file_size / 1024).toFixed(0)} KB • {uploadedDoc.ocr_status}
-                      </span>
-                      {!isAdmin && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openRectificationModal(reqType);
-                          }}
-                          className="btn btn-outline btn-sm"
-                          style={{ fontSize: '0.625rem', padding: '1px 6px' }}
-                          title="Upload replacement / rectification document"
-                        >
-                          Replace
-                        </button>
-                      )}
+                  {/* Other overlapping case(s) */}
+                  {concurrentInstitutionCases.map(oc => (
+                    <div key={oc.id} style={{ backgroundColor: '#ffffff', padding: '8px 10px', borderRadius: '4px', border: '1px solid #fde68a', fontSize: '0.75rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Link to={`/applications/${oc.id}`} style={{ fontWeight: 700, color: '#0284c7' }}>
+                          Concurrent Case: {oc.case_id || oc.application_number}
+                        </Link>
+                        <span className="badge badge-info" style={{ fontSize: '0.625rem' }}>{oc.status}</span>
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Bureau: <strong>{oc.bureau || oc.receiving_bureau}</strong>
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.6875rem', marginTop: '2px' }}>
+                        Officer: {oc.assigned_officer || 'Desk In-Charge'}
+                      </div>
                     </div>
-                  ) : (
-                    <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'flex-end' }}>
-                      {!isAdmin && (
-                        <button
-                          onClick={() => {
-                            setSelectedUploadDocType(reqType);
-                            setShowUploadModal(true);
-                          }}
-                          className="btn btn-outline btn-sm"
-                          style={{ fontSize: '0.625rem', padding: '2px 6px', color: '#dc2626', borderColor: '#fca5a5' }}
-                        >
-                          Upload File
-                        </button>
-                      )}
-                    </div>
+                  ))}
+                </div>
+
+                {/* Overlap Review Controls */}
+                <div style={{ borderTop: '1px solid #fde68a', paddingTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => handleReviewOverlapDecision('Confirmed')}
+                    className="btn btn-outline-clean btn-xs"
+                    style={{ backgroundColor: '#ffffff', color: '#065f46', borderColor: '#a7f3d0' }}
+                  >
+                    ✓ Confirm Overlap
+                  </button>
+                  <button
+                    onClick={() => handleReviewOverlapDecision('Dismissed')}
+                    className="btn btn-outline-clean btn-xs"
+                    style={{ backgroundColor: '#ffffff', color: '#991b1b', borderColor: '#fecaca' }}
+                  >
+                    Dismiss
+                  </button>
+                  {concurrentInstitutionCases.length > 0 && (
+                    <button
+                      onClick={() => handleExecuteLinkCases(concurrentInstitutionCases[0].case_id || concurrentInstitutionCases[0].application_number)}
+                      className="btn btn-emerald-primary btn-xs"
+                    >
+                      🔗 Link Cases Now
+                    </button>
                   )}
                 </div>
-              );
-            })}
+              </>
+            ) : (
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                Deterministic scanning against AICTE ID and normalized institution titles found no duplicate complaints across other Bureaus.
+              </p>
+            )}
           </div>
 
-          <div style={{ marginTop: '12px', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
-            <button 
-              onClick={() => setShowUploadModal(true)} 
-              className="btn btn-outline btn-sm"
-              style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-            >
-              <FilePlus size={14} />
-              Upload Extra Attachment
-            </button>
+          {/* Quick Status Update Section */}
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
+              Update Case Status
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+              {(['Received', 'Pending', 'Under Process', 'Awaiting Information'] as ComplaintStatus[]).map(st => (
+                <button
+                  key={st}
+                  disabled={app.status === st}
+                  onClick={() => handleQuickStatusChange(st)}
+                  className={`btn btn-xs ${app.status === st ? 'btn-primary' : 'btn-outline-clean'}`}
+                  style={{ fontSize: '0.6875rem' }}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* PANEL 2: Document Canvas & Viewer */}
-        <div style={{ height: '720px' }}>
-          <DocumentViewer 
-            document={selectedDocument}
-            onCorrectField={handleFieldCorrection}
-            onTriggerAuthorityVerification={handleTriggerAuthority}
-            authorityResult={selectedDocument ? app.authority_verifications?.[selectedDocument.document_type] : undefined}
-          />
-        </div>
+          {/* Inter-Bureau Transfer History Snippet */}
+          {app.transfers && app.transfers.length > 0 && (
+            <div style={{ marginBottom: '14px' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+                Transfer History ({app.transfers.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {app.transfers.map(tr => (
+                  <div key={tr.id} style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', padding: '8px 10px', fontSize: '0.75rem' }}>
+                    <div style={{ fontWeight: 700, color: '#92400e' }}>
+                      {tr.from_bureau} ➔ {tr.to_bureau}
+                    </div>
+                    <div style={{ color: '#78350f', marginTop: '2px' }}>{tr.transfer_reason}</div>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      By: {tr.transferred_by} • {new Date(tr.transferred_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-        {/* PANEL 3: AI Findings & Regulatory Evidence Panel */}
-        <div className="card" style={{ height: '720px', overflow: 'hidden' }}>
-          <ValidationFindingsPanel
-            applicationId={app.id}
-            findings={app.findings || []}
-            selectedDocumentId={selectedDocument?.id}
-            onFindingUpdated={loadApplication}
-          />
+          {/* Escalation Record Snippet */}
+          {app.escalations && app.escalations.length > 0 && (
+            <div style={{ marginBottom: '14px' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', marginBottom: '6px' }}>
+                Escalation Notice
+              </div>
+              <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', padding: '8px 10px', fontSize: '0.75rem' }}>
+                <div style={{ fontWeight: 700, color: '#991b1b' }}>
+                  Escalated to: {app.escalations[0].escalated_to}
+                </div>
+                <div style={{ color: '#7f1d1d', marginTop: '2px' }}>{app.escalations[0].escalation_reason}</div>
+              </div>
+            </div>
+          )}
+
+          {/* Formal Disposal Order Display */}
+          {app.disposal_decision && (
+            <div style={{ backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '4px', padding: '10px 12px', fontSize: '0.75rem', marginTop: 'auto' }}>
+              <div style={{ fontWeight: 700, color: '#065f46' }}>
+                Formal Disposal Order: {app.disposal_decision.disposal_order_number}
+              </div>
+              <div style={{ fontWeight: 600, color: '#047857', marginTop: '2px' }}>
+                Decision: {app.disposal_decision.decision}
+              </div>
+              <div style={{ color: '#064e3b', marginTop: '4px' }}>
+                {app.disposal_decision.remarks}
+              </div>
+              <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Disposed by: {app.disposal_decision.disposed_by} on {new Date(app.disposal_decision.disposed_at).toLocaleDateString()}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* SLIDE-OVER INSPECTOR DRAWER FOR SECONDARY WORKFLOWS */}
+      {/* SECONDARY DRAWER: Overlap Matrix & Audit History */}
       {activeDrawer && (
         <div className="drawer-overlay" onClick={() => setActiveDrawer(null)}>
           <div className="drawer-panel" onClick={e => e.stopPropagation()}>
-            {/* Drawer Header */}
             <div style={{ 
               display: 'flex', 
               justifyContent: 'space-between', 
               alignItems: 'center', 
               padding: '16px 20px', 
-              borderBottom: '1px solid var(--border-subtle)',
-              backgroundColor: '#f8fafc'
+              borderBottom: '1px solid var(--border-subtle)' 
             }}>
-              <div>
-                <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                  {activeDrawer === 'cross_comparison' && 'Cross-Document Entity Comparison Matrix'}
-                  {activeDrawer === 'authority' && 'National Regulatory Gateway — Authority Verification'}
-                  {activeDrawer === 'infrastructure' && 'Physical Infrastructure & Safety Evidence'}
-                  {activeDrawer === 'rules' && 'Applicable AICTE Regulatory Rules (APH 2026-27)'}
-                  {activeDrawer === 'audit_history' && 'Application Status Transitions & Audit Trail'}
-                  {activeDrawer === 'clarifications' && 'In-App Status Clarification Requests'}
-                </h3>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-                  {app.application_number} • {app.institution?.name}
-                </p>
-              </div>
-
+              <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                {activeDrawer === 'cross_comparison' && 'Cross-Bureau Overlap Analysis Matrix'}
+                {activeDrawer === 'audit_history' && 'Chronological Action & Transfer History'}
+                {activeDrawer === 'clarifications' && 'Inter-Bureau Communication Desk'}
+                {activeDrawer === 'rules' && 'AICTE Complaint Disposal Timeline Norms'}
+              </h2>
               <button 
                 onClick={() => setActiveDrawer(null)}
-                style={{ 
-                  background: 'none', 
-                  border: 'none', 
-                  cursor: 'pointer', 
-                  padding: '6px',
-                  borderRadius: '4px',
-                  color: 'var(--text-muted)'
-                }}
-                title="Close drawer"
+                className="btn btn-outline-clean btn-xs"
+                style={{ borderRadius: '50%', width: '28px', height: '28px', padding: 0 }}
               >
-                <X size={20} />
+                ✕
               </button>
             </div>
 
-            {/* Drawer Content Body */}
             <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
-              {/* DRAWER 1: Cross-Document Entity Comparison Matrix */}
               {activeDrawer === 'cross_comparison' && (
                 <div>
-                  <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px 16px', marginBottom: '16px' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
-                      Registered Institution Profile Baseline:
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', fontSize: '0.8125rem' }}>
-                      <div><strong>Legal Title:</strong> <span style={{ color: '#0f172a' }}>{app.institution?.name}</span></div>
-                      <div><strong>AICTE Permanent ID:</strong> <code>{app.institution?.code}</code></div>
-                      <div><strong>Address:</strong> <span style={{ color: '#0f172a' }}>{app.institution?.address}, {app.institution?.city}</span></div>
-                    </div>
-                  </div>
-
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="table" style={{ fontSize: '0.8125rem' }}>
-                      <thead>
-                        <tr>
-                          <th>Document Slot</th>
-                          <th>Extracted Legal Name</th>
-                          <th>Extracted Code</th>
-                          <th>Certificate Ref No.</th>
-                          <th>Validity</th>
-                          <th>Issuing Authority</th>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                    Showing all concurrent active and historical complaints docketed against <strong>{app.institution?.name}</strong> (AICTE ID: {app.institution?.code}) across Regulation Bureau, PGRC, and Regional Offices.
+                  </p>
+                  <table className="clean-data-table" style={{ fontSize: '0.8125rem' }}>
+                    <thead>
+                      <tr>
+                        <th>Case ID</th>
+                        <th>Bureau</th>
+                        <th>Category</th>
+                        <th>Status</th>
+                        <th>Officer</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style={{ backgroundColor: '#eff6ff' }}>
+                        <td><strong>{caseId} (Current)</strong></td>
+                        <td>{currentBureau}</td>
+                        <td>{app.complaint_category}</td>
+                        <td>{getStatusBadge(app.status)}</td>
+                        <td>{app.assigned_officer}</td>
+                        <td>—</td>
+                      </tr>
+                      {concurrentInstitutionCases.map(oc => (
+                        <tr key={oc.id}>
+                          <td><strong>{oc.case_id || oc.application_number}</strong></td>
+                          <td>{oc.bureau || oc.receiving_bureau}</td>
+                          <td>{oc.complaint_category}</td>
+                          <td>{getStatusBadge(oc.status)}</td>
+                          <td>{oc.assigned_officer}</td>
+                          <td>
+                            <button
+                              onClick={() => handleExecuteLinkCases(oc.case_id || oc.application_number)}
+                              className="btn btn-outline-clean btn-xs"
+                            >
+                              Link Case
+                            </button>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {requiredDocList.map(docType => {
-                          const doc = (app.documents || []).find(d => d.document_type === docType && d.is_active_version !== false);
-                          if (!doc) {
-                            return (
-                              <tr key={docType} style={{ backgroundColor: '#fef2f2' }}>
-                                <td><strong>{docType}</strong></td>
-                                <td colSpan={5} style={{ color: '#dc2626', fontStyle: 'italic' }}>
-                                  Missing — Mandatory certificate has not been uploaded.
-                                </td>
-                              </tr>
-                            );
-                          }
-
-                          const fields = doc.extracted_fields;
-                          const normAppName = normalizeText(app.institution?.name);
-                          const normDocName = normalizeText(fields?.institutionName);
-                          const isNameMatched = normDocName && normAppName && (normAppName.includes(normDocName) || normDocName.includes(normAppName));
-                          const isCodeMatched = fields?.institutionCode && app.institution?.code && fields.institutionCode.trim().toUpperCase() === app.institution.code.trim().toUpperCase();
-
-                          return (
-                            <tr key={docType}>
-                              <td>
-                                <strong>{docType}</strong>
-                                <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                                  {doc.original_name} (v{doc.version || 1})
-                                </div>
-                              </td>
-                              <td>
-                                {fields?.institutionName ? (
-                                  <div>
-                                    <div>{fields.institutionName}</div>
-                                    {isNameMatched ? (
-                                      <span className="badge badge-passed" style={{ fontSize: '0.625rem', marginTop: '2px' }}>
-                                        <Check size={10} /> Name Matches Profile
-                                      </span>
-                                    ) : (
-                                      <span className="badge badge-needs-review" style={{ fontSize: '0.625rem', marginTop: '2px' }}>
-                                        <AlertTriangle size={10} /> Discrepancy Detected
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Not Detected</span>
-                                )}
-                              </td>
-                              <td>
-                                {fields?.institutionCode ? (
-                                  <div>
-                                    <code>{fields.institutionCode}</code>
-                                    <div>
-                                      {isCodeMatched ? (
-                                        <span className="badge badge-passed" style={{ fontSize: '0.625rem', marginTop: '2px' }}>
-                                          <Check size={10} /> Code Aligned
-                                        </span>
-                                      ) : (
-                                        <span className="badge badge-needs-review" style={{ fontSize: '0.625rem', marginTop: '2px' }}>
-                                          <AlertTriangle size={10} /> Code Mismatch
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Not Detected</span>
-                                )}
-                              </td>
-                              <td>
-                                {fields?.documentNumber ? <code>{fields.documentNumber}</code> : <span style={{ color: '#94a3b8' }}>N/A</span>}
-                              </td>
-                              <td>
-                                {fields?.expiryDate ? (
-                                  <div>
-                                    <div>{fields.expiryDate}</div>
-                                    {new Date(fields.expiryDate) < new Date('2026-04-01') ? (
-                                      <span className="badge badge-failed" style={{ fontSize: '0.625rem' }}>Expired</span>
-                                    ) : (
-                                      <span className="badge badge-passed" style={{ fontSize: '0.625rem' }}>Active</span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span style={{ color: 'var(--text-muted)' }}>Permanent</span>
-                                )}
-                              </td>
-                              <td>
-                                <span style={{ fontSize: '0.75rem' }}>{fields?.issuingAuthority || 'Competent Authority'}</span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
 
-              {/* DRAWER 2: Authority Gateway */}
-              {activeDrawer === 'authority' && (
-                <div>
-                  <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.75rem', color: '#92400e' }}>
-                    <strong>Regulatory Notice:</strong> {SYNTHETIC_AUTHORITY_DISCLAIMER}
-                  </div>
-
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="table" style={{ fontSize: '0.8125rem' }}>
-                      <thead>
-                        <tr>
-                          <th>Document Type</th>
-                          <th>Reference Number</th>
-                          <th>Issuing Authority</th>
-                          <th>Status</th>
-                          <th>Registry Response</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {requiredDocList.map(docType => {
-                          const doc = (app.documents || []).find(d => d.document_type === docType && d.is_active_version !== false);
-                          const auth = app.authority_verifications?.[docType];
-
-                          return (
-                            <tr key={docType}>
-                              <td><strong>{docType}</strong></td>
-                              <td>
-                                {doc?.extracted_fields?.documentNumber ? <code>{doc.extracted_fields.documentNumber}</code> : <em>Missing</em>}
-                              </td>
-                              <td>
-                                {doc?.extracted_fields?.issuingAuthority || 'Competent Directorate'}
-                              </td>
-                              <td>
-                                {auth ? (
-                                  <span className={`badge ${
-                                    auth.status === 'Verified by Source' ? 'badge-passed' :
-                                    auth.status === 'Source Unavailable' ? 'badge-needs-review' : 'badge-failed'
-                                  }`}>
-                                    {auth.status}
-                                  </span>
-                                ) : (
-                                  <span className="badge badge-not-checked">Pending Query</span>
-                                )}
-                              </td>
-                              <td style={{ maxWidth: '280px' }}>
-                                {auth ? (
-                                  <div style={{ fontSize: '0.75rem', color: '#334155' }}>
-                                    {auth.responseSummary}
-                                  </div>
-                                ) : (
-                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                                    No lookup dispatched yet.
-                                  </span>
-                                )}
-                              </td>
-                              <td>
-                                {doc && (
-                                  <button
-                                    onClick={() => handleTriggerAuthority(docType)}
-                                    className="btn btn-outline btn-sm"
-                                    style={{ fontSize: '0.75rem', padding: '3px 8px' }}
-                                  >
-                                    <Shield size={12} /> {auth ? 'Re-Query' : 'Query'}
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* DRAWER 3: Infrastructure Evidence */}
-              {activeDrawer === 'infrastructure' && (
-                <div>
-                  <div style={{ backgroundColor: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '6px', padding: '12px', marginBottom: '16px', fontSize: '0.75rem', color: '#92400e' }}>
-                    <strong>AUTOMATED INFRASTRUCTURE TRIAGE:</strong> Triage checks clarity, EXIF timestamps, and GPS coordinates against survey records. Physical EVC inspection remains mandatory for final statutory compliance.
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
-                    {['All', 'Land', 'Building', 'Laboratory', 'Safety', 'Barrier-Free Access'].map(cat => (
-                      <button
-                        key={cat}
-                        onClick={() => setSelectedInfraCategory(cat)}
-                        className={`btn btn-sm ${selectedInfraCategory === cat ? 'btn-primary' : 'btn-outline'}`}
-                        style={{ fontSize: '0.75rem', padding: '3px 10px' }}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-
-                  {(!app.infrastructure_evidence || app.infrastructure_evidence.length === 0) ? (
-                    <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
-                      <Camera size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
-                      <p>No geotagged photographs on file.</p>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
-                      {(app.infrastructure_evidence || [])
-                        .filter(ev => selectedInfraCategory === 'All' || ev.category === selectedInfraCategory)
-                        .map(ev => {
-                          const isEditing = editingInfraId === ev.id;
-                          return (
-                            <div key={ev.id} style={{ border: '1px solid var(--border-subtle)', borderRadius: '6px', overflow: 'hidden' }}>
-                              <div style={{ height: '160px', backgroundColor: '#0f172a' }}>
-                                <img src={ev.file_url} alt={ev.title} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                              </div>
-                              <div style={{ padding: '10px' }}>
-                                <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{ev.title}</div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '4px 0' }}>{ev.description}</div>
-                                {ev.coordinates && (
-                                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-                                    GPS: {ev.coordinates.latitude.toFixed(4)}° N, {ev.coordinates.longitude.toFixed(4)}° E
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* DRAWER 4: Regulatory Rules (APH) */}
-              {activeDrawer === 'rules' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {regulatoryRuleEngine.getRulesForApplicationType(app.application_type).map(rule => (
-                    <div key={rule.ruleId} style={{ border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '12px 14px', backgroundColor: '#ffffff' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <span className="badge badge-info" style={{ fontSize: '0.6875rem' }}>{rule.ruleId} v{rule.version}</span>
-                        <span className={`badge ${rule.severity === 'High' ? 'badge-failed' : 'badge-needs-review'}`} style={{ fontSize: '0.625rem' }}>
-                          {rule.severity} Severity
-                        </span>
-                      </div>
-                      <h4 style={{ margin: '4px 0', fontSize: '0.875rem', fontWeight: 600 }}>{rule.name}</h4>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '4px 0 8px 0' }}>{rule.description}</p>
-                      <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>Citation: <strong>{rule.aphReference}</strong></div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* DRAWER 5: Status History & Audit */}
               {activeDrawer === 'audit_history' && (
                 <div>
-                  <StatusHistoryTimeline history={app.status_history || []} />
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                    Immutable chronological record of registrations, assignments, inter-bureau transfers, status modifications, and officer notes.
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {(app.status_history || []).map((sh, idx) => (
+                      <div key={sh.id || idx} style={{ borderLeft: '3px solid #0284c7', paddingLeft: '12px', fontSize: '0.8125rem' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {sh.new_status ? `Status: ${sh.new_status}` : 'Action Recorded'}
+                        </div>
+                        <div style={{ color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {sh.reason}
+                        </div>
+                        <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Actor: {sh.actor_name} • {new Date(sh.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {/* DRAWER 6: Clarifications & Notes */}
               {activeDrawer === 'clarifications' && (
                 <div>
-                  <StatusClarificationSection
-                    applicationId={app.id}
-                    isAdmin={isAdmin}
-                    onUpdate={loadApplication}
-                  />
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                    Transmit internal inquiry notes, joint inspection directives, or coordination requests to other Bureaus/Cells.
+                  </p>
+                  <div className="form-group" style={{ marginBottom: '12px' }}>
+                    <label className="form-label">Target Bureau/Cell</label>
+                    <select 
+                      className="form-input"
+                      value={interBureauRecipient}
+                      onChange={e => setInterBureauRecipient(e.target.value)}
+                    >
+                      <option value="Regulation Bureau (RB)">Regulation Bureau (RB)</option>
+                      <option value="Public Grievance Redressal Cell (PGRC)">Public Grievance Redressal Cell (PGRC)</option>
+                      <option value="Vigilance Cell">Vigilance Cell</option>
+                      <option value="Regional Office (Northern)">Regional Office (Northern)</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: '12px' }}>
+                    <label className="form-label">Subject</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="e.g. Joint Scrutiny on Fee Structure & Unapproved Division"
+                      value={interBureauSubject}
+                      onChange={e => setInterBureauSubject(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: '14px' }}>
+                    <label className="form-label">Message Content</label>
+                    <textarea 
+                      className="form-input" 
+                      rows={4}
+                      placeholder="Enter internal communication directive..."
+                      value={interBureauMessage}
+                      onChange={e => setInterBureauMessage(e.target.value)}
+                    />
+                  </div>
+                  <button 
+                    onClick={() => {
+                      if (!interBureauSubject || !interBureauMessage) {
+                        alert('Please fill out subject and message.');
+                        return;
+                      }
+                      alert(`Message dispatched to ${interBureauRecipient}! Notification recorded.`);
+                      setInterBureauSubject('');
+                      setInterBureauMessage('');
+                      setActiveDrawer(null);
+                    }}
+                    className="btn btn-emerald-primary btn-sm"
+                  >
+                    Send Bureau Communication
+                  </button>
+                </div>
+              )}
+
+              {activeDrawer === 'rules' && (
+                <div style={{ fontSize: '0.8125rem' }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: 'var(--text-primary)' }}>Standard Grievance Disposal Norms (APH 2026-27)</h4>
+                  <ul style={{ paddingLeft: '20px', lineHeight: 1.6, color: 'var(--text-muted)' }}>
+                    <li><strong>Initial Scrutiny &amp; Docketing:</strong> Within 48 hours of receipt.</li>
+                    <li><strong>Explanation Notice to Institution:</strong> 7 days response window.</li>
+                    <li><strong>Cross-Bureau Overlap Coordination:</strong> Immediate hold on conflicting unilateral decisions; mandatory consultation within 5 business days.</li>
+                    <li><strong>Physical Fact-Finding / Inspection:</strong> Within 15 calendar days where prima facie violation is established.</li>
+                    <li><strong>Final Disposal Order Target:</strong> Standard 30 days; Urgent escalations 15 days.</li>
+                  </ul>
                 </div>
               )}
             </div>
@@ -1074,68 +1051,51 @@ export const ApplicationDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Upload Document Modal */}
-      {showUploadModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3>Upload Statutory Document Attachment</h3>
-              <button 
-                onClick={() => setShowUploadModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.25rem' }}
-              >
-                &times;
-              </button>
-            </div>
-            <form onSubmit={handleFileUpload}>
+      {/* MODAL 1: Inter-Bureau Transfer Modal */}
+      {showTransferModal && (
+        <div className="modal-overlay" onClick={() => setShowTransferModal(false)}>
+          <div className="modal-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <form onSubmit={handleExecuteTransfer} className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Transfer Case to Another Bureau / Cell</h3>
+                <button type="button" onClick={() => setShowTransferModal(false)} className="close-btn">✕</button>
+              </div>
               <div className="modal-body">
-                {uploadError && (
-                  <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', padding: '10px', borderRadius: '4px', color: '#991b1b', marginBottom: '14px', fontSize: '0.8125rem' }}>
-                    {uploadError}
-                  </div>
-                )}
-
                 <div className="form-group">
-                  <label className="form-label">Regulatory Document Category:</label>
-                  <select
-                    className="form-select"
-                    value={selectedUploadDocType}
-                    onChange={e => setSelectedUploadDocType(e.target.value)}
+                  <label className="form-label">Current Responsible Bureau</label>
+                  <input type="text" disabled value={currentBureau} className="form-input" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Transfer To Bureau / Cell *</label>
+                  <select 
+                    className="form-input" 
+                    value={transferToBureau}
+                    onChange={e => setTransferToBureau(e.target.value)}
                   >
-                    {requiredDocList.map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
+                    <option value="Regulation Bureau (RB)">Regulation Bureau (RB)</option>
+                    <option value="Public Grievance Redressal Cell (PGRC)">Public Grievance Redressal Cell (PGRC)</option>
+                    <option value="Vigilance Cell">Vigilance Cell</option>
+                    <option value="Regional Office (Northern)">Regional Office (Northern)</option>
+                    <option value="Regional Office (Western)">Regional Office (Western)</option>
+                    <option value="Approval Bureau">Approval Bureau</option>
                   </select>
                 </div>
-
                 <div className="form-group">
-                  <label className="form-label">Select File (PDF, JPG, PNG under 15MB):</label>
-                  <input
-                    type="file"
+                  <label className="form-label">Statutory Reason for Transfer *</label>
+                  <textarea 
+                    required 
+                    rows={4} 
                     className="form-input"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={e => setUploadFile(e.target.files ? e.target.files[0] : null)}
+                    placeholder="Explain statutory jurisdiction or regulatory scope requiring transfer..."
+                    value={transferReason}
+                    onChange={e => setTransferReason(e.target.value)}
                   />
-                  <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
-                    Files will be analyzed by PDF.js text extractor and evaluated against 10 regulatory factors. SHA-256 checksum is computed.
-                  </small>
                 </div>
               </div>
               <div className="modal-footer">
-                <button 
-                  type="button" 
-                  onClick={() => setShowUploadModal(false)} 
-                  className="btn btn-outline"
-                  disabled={isUploading}
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn btn-primary"
-                  disabled={isUploading || !uploadFile}
-                >
-                  {isUploading ? 'Uploading & Analyzing...' : 'Upload Attachment'}
+                <button type="button" onClick={() => setShowTransferModal(false)} className="btn btn-outline-clean btn-sm">Cancel</button>
+                <button type="submit" disabled={isTransferring} className="btn btn-emerald-primary btn-sm">
+                  {isTransferring ? 'Transferring...' : 'Execute Case Transfer'}
                 </button>
               </div>
             </form>
@@ -1143,148 +1103,45 @@ export const ApplicationDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Admin Scrutiny Decision Modal */}
-      {showAdminDecisionModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3>Record Official Scrutiny Decision</h3>
-              <button 
-                onClick={() => setShowAdminDecisionModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.25rem' }}
-              >
-                &times;
-              </button>
-            </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label className="form-label">Regulatory Decision Outcome:</label>
-                <select
-                  className="form-select"
-                  value={adminDecisionType}
-                  onChange={e => setAdminDecisionType(e.target.value as any)}
-                >
-                  <option value="Approved">Approved (Grant Approval)</option>
-                  <option value="Action Required">Action Required (Flag Deficiency for Rectification)</option>
-                  <option value="Needs Further Inspection">Needs Further Inspection (Schedule Physical EVC)</option>
-                  <option value="Rejected">Rejected (Disapprove with Cause)</option>
-                </select>
+      {/* MODAL 2: Escalation Modal */}
+      {showEscalateModal && (
+        <div className="modal-overlay" onClick={() => setShowEscalateModal(false)}>
+          <div className="modal-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <form onSubmit={handleExecuteEscalation} className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Escalate Complaint to Higher Authority</h3>
+                <button type="button" onClick={() => setShowEscalateModal(false)} className="close-btn">✕</button>
               </div>
-
-              <div className="form-group">
-                <label className="form-label">Scrutiny Reason &amp; Official Grounds (Mandatory):</label>
-                <textarea
-                  className="form-textarea"
-                  rows={4}
-                  value={adminDecisionReason}
-                  onChange={e => setAdminDecisionReason(e.target.value)}
-                  placeholder="State the regulatory justification, applicable APH clauses, or deficiency explanations..."
-                />
-              </div>
-
-              <div style={{ backgroundColor: '#eff6ff', padding: '10px', borderRadius: '4px', fontSize: '0.75rem', color: '#1e40af' }}>
-                <strong>Audit Notice:</strong> This action changes application status to <em>{adminDecisionType === 'Approved' ? 'Review Completed' : adminDecisionType === 'Action Required' ? 'Action Required' : 'Under Review'}</em>, records your credentials in the immutable audit trail, and notifies the institution.
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button 
-                onClick={() => setShowAdminDecisionModal(false)} 
-                className="btn btn-outline"
-                disabled={isSubmittingDecision}
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleRecordAdminDecision} 
-                className="btn btn-primary"
-                disabled={isSubmittingDecision || !adminDecisionReason.trim()}
-              >
-                {isSubmittingDecision ? 'Recording Decision...' : 'Record Decision'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Rectification / Document Replacement Modal */}
-      {showRectificationModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3>Upload Replacement / Rectification Document</h3>
-              <button 
-                onClick={() => setShowRectificationModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.25rem' }}
-              >
-                &times;
-              </button>
-            </div>
-            <form onSubmit={handleRectificationUpload}>
               <div className="modal-body">
-                {rectificationError && (
-                  <div style={{ padding: '10px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', color: '#991b1b', marginBottom: '14px', fontSize: '0.8125rem' }}>
-                    {rectificationError}
-                  </div>
-                )}
-
                 <div className="form-group">
-                  <label className="form-label">Statutory Document Category:</label>
-                  <input
-                    type="text"
+                  <label className="form-label">Escalate To *</label>
+                  <select 
                     className="form-input"
-                    value={rectificationDocType}
-                    disabled
-                    style={{ backgroundColor: '#f8fafc', fontWeight: 600 }}
-                  />
-                  <small style={{ color: 'var(--text-muted)' }}>
-                    Uploading a new file preserves the existing version in history and archives it.
-                  </small>
+                    value={escalateTo}
+                    onChange={e => setEscalateTo(e.target.value)}
+                  >
+                    <option value="Member Secretary & Bureau Head (RB)">Member Secretary &amp; Bureau Head (RB)</option>
+                    <option value="Vice Chairman, AICTE">Vice Chairman, AICTE</option>
+                    <option value="Chairman, AICTE">Chairman, AICTE</option>
+                    <option value="Chief Vigilance Officer (CVO)">Chief Vigilance Officer (CVO)</option>
+                  </select>
                 </div>
-
                 <div className="form-group">
-                  <label className="form-label">Replacement File (PDF, JPG, PNG — max 15MB):</label>
-                  <input
-                    type="file"
+                  <label className="form-label">Reason for High-Level Escalation *</label>
+                  <textarea 
+                    required 
+                    rows={4} 
                     className="form-input"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={e => {
-                      if (e.target.files && e.target.files[0]) {
-                        setRectificationFile(e.target.files[0]);
-                      }
-                    }}
+                    placeholder="Specify urgency, severe statutory non-compliance, or police/regulatory coordination required..."
+                    value={escalationReason}
+                    onChange={e => setEscalationReason(e.target.value)}
                   />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Rectification Note / Officer Reference (Optional):</label>
-                  <textarea
-                    className="form-textarea"
-                    rows={3}
-                    value={rectificationNote}
-                    onChange={e => setRectificationNote(e.target.value)}
-                    placeholder="e.g. Uploaded renewed Fire Safety NOC valid through 2027 as requested by scrutiny officer..."
-                  />
-                </div>
-
-                <div style={{ backgroundColor: '#eff6ff', padding: '10px', borderRadius: '4px', fontSize: '0.75rem', color: '#1e40af' }}>
-                  <strong>Rectification Workflow:</strong> Uploading will advance the version to v2, recalculate all 10 verification factors on the new bytes, set application status to <em>Resubmitted</em>, and notify the scrutiny desk.
                 </div>
               </div>
               <div className="modal-footer">
-                <button 
-                  type="button"
-                  onClick={() => setShowRectificationModal(false)} 
-                  className="btn btn-outline"
-                  disabled={isRectifying}
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn btn-primary"
-                  disabled={isRectifying || !rectificationFile}
-                >
-                  {isRectifying ? 'Validating & Replacing...' : 'Upload & Re-run Validation'}
+                <button type="button" onClick={() => setShowEscalateModal(false)} className="btn btn-outline-clean btn-sm">Cancel</button>
+                <button type="submit" disabled={isEscalating} className="btn btn-emerald-primary btn-sm" style={{ backgroundColor: '#dc2626' }}>
+                  {isEscalating ? 'Escalating...' : 'Confirm Escalation'}
                 </button>
               </div>
             </form>
@@ -1292,175 +1149,94 @@ export const ApplicationDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Clarification Request Modal */}
-      {showClarificationModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3>Submit Status Clarification Request</h3>
-              <button 
-                onClick={() => setShowClarificationModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.25rem' }}
-              >
-                &times;
-              </button>
-            </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label className="form-label">Subject / Query Title:</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={requestSubject}
-                  onChange={e => setRequestSubject(e.target.value)}
-                  placeholder="e.g. Clarification regarding Fire Safety Certificate renewal timeline"
-                />
+      {/* MODAL 3: Formal Disposal Order Modal */}
+      {showDisposalModal && (
+        <div className="modal-overlay" onClick={() => setShowDisposalModal(false)}>
+          <div className="modal-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: '540px' }}>
+            <form onSubmit={handleExecuteDisposal} className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Record Formal Complaint Disposal Decision</h3>
+                <button type="button" onClick={() => setShowDisposalModal(false)} className="close-btn">✕</button>
               </div>
-
-              <div className="form-group">
-                <label className="form-label">Message Details:</label>
-                <textarea
-                  className="form-textarea"
-                  rows={4}
-                  value={requestMessage}
-                  onChange={e => setRequestMessage(e.target.value)}
-                  placeholder="Describe your inquiry or contextual explanation for the scrutiny committee..."
-                />
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Disposal Finding / Decision *</label>
+                  <select 
+                    className="form-input"
+                    value={disposalDecision}
+                    onChange={e => setDisposalDecision(e.target.value as any)}
+                  >
+                    <option value="Resolved upon Rectification">Resolved upon Rectification (Refund/Correction Verified)</option>
+                    <option value="Substantiated - Directive Issued">Substantiated - Formal Directive / Sanction Issued</option>
+                    <option value="Unsubstantiated / Closed">Unsubstantiated / Dismissed upon Inquiry</option>
+                    <option value="Referred to State Authority">Referred to State DTE / Judicial Forum</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Disposal Order Number (Optional)</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="e.g. AICTE/PGRC/DISP/2026/0419"
+                    value={disposalOrderNo}
+                    onChange={e => setDisposalOrderNo(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Statutory Remarks &amp; Compliance Notes *</label>
+                  <textarea 
+                    required 
+                    rows={4} 
+                    className="form-input"
+                    placeholder="Enter final order text, proof verification notes, and conditions..."
+                    value={disposalRemarks}
+                    onChange={e => setDisposalRemarks(e.target.value)}
+                  />
+                </div>
               </div>
-            </div>
-            <div className="modal-footer">
-              <button 
-                onClick={() => setShowClarificationModal(false)} 
-                className="btn btn-outline"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleSubmitClarification} 
-                className="btn btn-primary"
-                disabled={!requestSubject || !requestMessage}
-              >
-                Send Request to Officer
-              </button>
-            </div>
+              <div className="modal-footer">
+                <button type="button" onClick={() => setShowDisposalModal(false)} className="btn btn-outline-clean btn-sm">Cancel</button>
+                <button type="submit" disabled={isDisposing} className="btn btn-emerald-primary btn-sm">
+                  {isDisposing ? 'Saving...' : 'Record Final Disposal'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
-    </div>
-  );
-};
 
-// Subcomponent for Clarification requests
-const StatusClarificationSection: React.FC<{
-  applicationId: string;
-  isAdmin: boolean;
-  onUpdate: () => void;
-}> = ({ applicationId, isAdmin, onUpdate }) => {
-  const [requests, setRequests] = useState<any[]>([]);
-  const [replies, setReplies] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    statusRequestService.getRequests(applicationId).then(setRequests);
-  }, [applicationId]);
-
-  const handleSendReply = async (reqId: string) => {
-    const text = replies[reqId];
-    if (!text || !text.trim()) return;
-
-    await statusRequestService.replyToRequest(
-      reqId,
-      text,
-      authService.getCurrentUser()?.full_name || 'Scrutiny Officer'
-    );
-    const updated = await statusRequestService.getRequests(applicationId);
-    setRequests(updated);
-    setReplies({ ...replies, [reqId]: '' });
-    onUpdate();
-  };
-
-  if (requests.length === 0) {
-    return (
-      <div style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-        <MessageSquare size={36} style={{ opacity: 0.5, marginBottom: '8px' }} />
-        <p>No status clarification requests found for this application.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      {requests.map(req => (
-        <div 
-          key={req.id}
-          style={{
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '6px',
-            padding: '14px',
-            backgroundColor: '#ffffff'
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <h4 style={{ fontSize: '0.875rem', fontWeight: 600, margin: 0 }}>{req.request_subject}</h4>
-            <span className={`badge ${req.status === 'Resolved' ? 'badge-passed' : 'badge-needs-review'}`} style={{ fontSize: '0.6875rem' }}>
-              {req.status}
-            </span>
+      {/* MODAL 4: Add Officer Remark Modal */}
+      {showRemarkModal && (
+        <div className="modal-overlay" onClick={() => setShowRemarkModal(false)}>
+          <div className="modal-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <form onSubmit={handleAddOfficerRemark} className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Add Official Officer Remark</h3>
+                <button type="button" onClick={() => setShowRemarkModal(false)} className="close-btn">✕</button>
+              </div>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Remark / Inquiry Note *</label>
+                  <textarea 
+                    required 
+                    rows={4} 
+                    className="form-input"
+                    placeholder="Enter observation, telephonic inquiry summary, or compliance reminder..."
+                    value={remarkText}
+                    onChange={e => setRemarkText(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" onClick={() => setShowRemarkModal(false)} className="btn btn-outline-clean btn-sm">Cancel</button>
+                <button type="submit" disabled={isAddingRemark} className="btn btn-emerald-primary btn-sm">
+                  {isAddingRemark ? 'Saving...' : 'Save Remark'}
+                </button>
+              </div>
+            </form>
           </div>
-
-          <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-            {req.request_message}
-          </p>
-          <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
-            Requested on {new Date(req.created_at).toLocaleString()}
-          </span>
-
-          {/* Official Reply Box */}
-          {req.reply_message ? (
-            <div style={{
-              marginTop: '10px',
-              backgroundColor: '#eff6ff',
-              border: '1px solid #bfdbfe',
-              borderRadius: '4px',
-              padding: '10px'
-            }}>
-              <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#1e40af', marginBottom: '2px' }}>
-                Official Scrutiny Reply ({req.replied_by}):
-              </div>
-              <p style={{ fontSize: '0.8125rem', color: '#1e3a8a', margin: 0 }}>
-                {req.reply_message}
-              </p>
-              <div style={{ fontSize: '0.625rem', color: '#60a5fa', marginTop: '4px' }}>
-                Replied on {new Date(req.replied_at).toLocaleString()}
-              </div>
-            </div>
-          ) : isAdmin ? (
-            <div style={{ marginTop: '10px', borderTop: '1px solid var(--border-subtle)', paddingTop: '8px' }}>
-              <label style={{ fontSize: '0.6875rem', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                Official Scrutiny Desk Reply:
-              </label>
-              <textarea
-                className="form-textarea"
-                rows={2}
-                value={replies[req.id] || ''}
-                onChange={e => setReplies({ ...replies, [req.id]: e.target.value })}
-                placeholder="Enter official committee reply..."
-                style={{ fontSize: '0.75rem' }}
-              />
-              <button
-                onClick={() => handleSendReply(req.id)}
-                className="btn btn-primary btn-sm"
-                style={{ marginTop: '6px', fontSize: '0.6875rem' }}
-                disabled={!replies[req.id]}
-              >
-                Send Reply
-              </button>
-            </div>
-          ) : (
-            <div style={{ marginTop: '6px', fontSize: '0.6875rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-              Awaiting officer reply from AICTE scrutiny desk.
-            </div>
-          )}
         </div>
-      ))}
+      )}
     </div>
   );
 };

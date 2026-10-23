@@ -20,6 +20,8 @@ import { notificationService } from './notificationService';
 import { authorityVerificationService } from './authorityVerificationService';
 import { documentService } from './documentService';
 
+import { complaintService } from './complaintService';
+
 const APPLICATIONS_STORAGE_KEY = 'aicte_smartverify_applications_data';
 
 class ApplicationService {
@@ -54,10 +56,11 @@ class ApplicationService {
   resetToSyntheticDefaults() {
     this.applications = [...SYNTHETIC_APPLICATIONS];
     this.saveLocal();
+    complaintService.resetToDefaults();
   }
 
   /**
-   * Fetch all applications, optionally filtered
+   * Fetch all applications / complaints, optionally filtered
    */
   async getApplications(options?: {
     institutionId?: string;
@@ -65,44 +68,68 @@ class ApplicationService {
     validationOutcome?: ValidationOutcome | 'All';
     applicationType?: string | 'All';
     searchTerm?: string;
+    bureau?: string | 'All';
+    category?: string | 'All';
+    region?: string | 'All';
+    priority?: string | 'All';
+    overlapOnly?: boolean;
+    overdueOnly?: boolean;
   }): Promise<Application[]> {
-    let result = [...this.applications];
-
-    if (options?.institutionId) {
-      result = result.filter(a => a.institution_id === options.institutionId);
-    }
-
-    if (options?.status && options.status !== 'All') {
-      result = result.filter(a => a.status === options.status);
-    }
-
-    if (options?.validationOutcome && options.validationOutcome !== 'All') {
-      result = result.filter(a => a.overall_validation_outcome === options.validationOutcome);
-    }
-
-    if (options?.applicationType && options.applicationType !== 'All') {
-      result = result.filter(a => a.application_type === options.applicationType);
-    }
-
-    if (options?.searchTerm) {
-      const term = options.searchTerm.toLowerCase().trim();
-      result = result.filter(a => 
-        a.application_number.toLowerCase().includes(term) ||
-        (a.institution?.name && a.institution.name.toLowerCase().includes(term)) ||
-        (a.institution?.code && a.institution.code.toLowerCase().includes(term))
-      );
-    }
-
-    return result;
+    return complaintService.getComplaints({
+      institutionId: options?.institutionId,
+      status: options?.status,
+      searchTerm: options?.searchTerm,
+      bureau: options?.bureau,
+      category: options?.category,
+      region: options?.region,
+      priority: options?.priority,
+      overlapOnly: options?.overlapOnly,
+      overdueOnly: options?.overdueOnly
+    });
   }
 
   /**
-   * Get single application by ID with full details
+   * Get single application / complaint by ID with full details
    */
   async getApplicationById(id: string): Promise<Application | null> {
-    const app = this.applications.find(a => a.id === id);
-    if (!app) return null;
-    return JSON.parse(JSON.stringify(app)); // Return clone
+    return complaintService.getComplaintById(id);
+  }
+
+  // Complaint Management Operations Delegations
+  async transferComplaint(complaintId: string, fromBureau: string, toBureau: string, reason: string, actor: string) {
+    return complaintService.transferComplaint(complaintId, fromBureau, toBureau, reason, actor);
+  }
+
+  async escalateComplaint(complaintId: string, escalatedTo: string, reason: string, actor: string) {
+    return complaintService.escalateComplaint(complaintId, escalatedTo, reason, actor);
+  }
+
+  async recordDisposal(complaintId: string, decision: any, remarks: string, orderNumber: string, actor: string) {
+    return complaintService.recordDisposal(complaintId, decision, remarks, orderNumber, actor);
+  }
+
+  async linkRelatedComplaints(id1: string, id2: string, actor: string, remarks: string) {
+    return complaintService.linkRelatedComplaints(id1, id2, actor, remarks);
+  }
+
+  async reviewOverlap(complaintId: string, decision: any, actor: string, remarks: string) {
+    return complaintService.reviewOverlap(complaintId, decision, actor, remarks);
+  }
+
+  async assignOfficer(complaintId: string, officerName: string, officerId: string | undefined, actor: string) {
+    return complaintService.assignOfficer(complaintId, officerName, officerId, actor);
+  }
+
+  async addRemark(complaintId: string, remark: string, actor: string) {
+    return complaintService.addRemark(complaintId, remark, actor);
+  }
+
+  calculateMetrics(complaintsList?: Application[]) {
+    return complaintService.calculateMetrics(complaintsList);
+  }
+
+  exportComplaintsAsCSV(complaintsList?: Application[]) {
+    return complaintService.exportComplaintsAsCSV(complaintsList);
   }
 
   /**

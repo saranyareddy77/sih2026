@@ -1,5 +1,5 @@
-// AICTE SmartVerify — Institution Compliance & Approval Portal
-// SIH Problem Statement 26261
+// AICTE SmartVerify — Central Institution Complaint Registry & Status Portal
+// SIH Problem Statement: Integrated Institution Complaint Monitoring and Status Dashboard for AICTE
 
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -21,10 +21,13 @@ import {
   ChevronRight, 
   Sparkles,
   MapPin,
-  Hash
+  Hash,
+  Send,
+  MessageSquare
 } from 'lucide-react';
-import { Application, ApplicationStatus, ApplicationType, ValidationOutcome } from '../types';
+import { Application, ApplicationStatus, BureauCell } from '../types';
 import { applicationService } from '../services/applicationService';
+import { complaintService } from '../services/complaintService';
 import { authService } from '../services/authService';
 
 export const InstitutionDashboard: React.FC = () => {
@@ -32,23 +35,24 @@ export const InstitutionDashboard: React.FC = () => {
   const currentUser = authService.getCurrentUser();
   const institution = currentUser?.institution;
 
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [complaints, setComplaints] = useState<Application[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
-  const [showNewAppModal, setShowNewAppModal] = useState<boolean>(false);
-  const [selectedAppType, setSelectedAppType] = useState<ApplicationType>('Extension of Approval (EoA)');
-  const [academicYear, setAcademicYear] = useState<string>('2026-2027');
+  const [showResponseModal, setShowResponseModal] = useState<boolean>(false);
+  const [selectedCaseId, setSelectedCaseId] = useState<string>('');
+  const [responseText, setResponseText] = useState<string>('');
+  const [isSubmittingResponse, setIsSubmittingResponse] = useState<boolean>(false);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const apps = await applicationService.getApplications({
+      const data = await applicationService.getApplications({
         institutionId: currentUser?.institution_id,
         searchTerm,
         status: statusFilter === 'All' ? undefined : (statusFilter as ApplicationStatus)
       });
-      setApplications(apps);
+      setComplaints(data);
     } catch (e) {
       console.error(e);
     } finally {
@@ -60,62 +64,58 @@ export const InstitutionDashboard: React.FC = () => {
     loadData();
   }, [searchTerm, statusFilter, currentUser]);
 
-  const handleCreateApplication = async () => {
-    if (!currentUser?.institution_id) return;
-    try {
-      const newApp = await applicationService.createApplication(
-        currentUser.institution_id,
-        selectedAppType,
-        academicYear,
-        currentUser.id
-      );
-      setShowNewAppModal(false);
-      navigate(`/applications/${newApp.id}`);
-    } catch (err: any) {
-      alert(`Could not create application: ${err.message}`);
-    }
-  };
+  // Operational metrics derived directly and accurately from institution complaints
+  const totalComplaints = complaints.length;
+  const pendingScrutiny = complaints.filter(c => c.status === 'Pending' || c.status === 'Received').length;
+  const awaitingInfo = complaints.filter(c => c.status === 'Awaiting Information' || c.status === 'Action Required').length;
+  const underProcess = complaints.filter(c => c.status === 'Under Process' || c.status === 'Under Review' || c.status === 'Needs Review' || c.status === 'Transferred').length;
+  const disposedCases = complaints.filter(c => c.status === 'Disposed' || c.status === 'Closed' || c.status === 'Review Completed').length;
 
-  // Operational metrics derived accurately from institution's active applications
-  const totalApplications = applications.length;
-  const actionRequired = applications.filter(a => a.status === 'Action Required' || a.overall_validation_outcome === 'Failed').length;
-  const awaitingReview = applications.filter(a => a.status === 'Awaiting Official Review').length;
-  const underReview = applications.filter(a => a.status === 'Under Review' || a.status === 'Submitted' || a.status === 'Needs Review' || a.status === 'Authenticity Confirmation Pending').length;
-  const reviewCompleted = applications.filter(a => a.status === 'Review Completed' || a.status === 'Verification Complete').length;
-
-  const getStatusBadge = (status: ApplicationStatus) => {
+  const getStatusBadge = (status: ApplicationStatus | string) => {
     switch (status) {
+      case 'Disposed':
+      case 'Closed':
       case 'Review Completed':
-      case 'Verification Complete':
         return <span className="badge badge-passed">{status}</span>;
+      case 'Awaiting Information':
       case 'Action Required':
         return <span className="badge badge-failed">{status}</span>;
-      case 'Needs Review':
-      case 'Authenticity Confirmation Pending':
-        return <span className="badge badge-needs-review">{status}</span>;
-      case 'Awaiting Official Review':
+      case 'Transferred':
+        return <span className="badge badge-needs-review" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>Transferred</span>;
+      case 'Under Process':
       case 'Under Review':
         return <span className="badge badge-info">{status}</span>;
       default:
-        return <span className="badge badge-draft">{status}</span>;
+        return <span className="badge badge-draft">{status || 'Pending'}</span>;
     }
   };
 
-  const getValidationBadge = (outcome?: ValidationOutcome) => {
-    switch (outcome) {
-      case 'Passed':
-        return <span className="badge badge-passed">Passed</span>;
-      case 'Failed':
-        return <span className="badge badge-failed">Deficiencies</span>;
-      case 'Needs Review':
-        return <span className="badge badge-needs-review">Needs Review</span>;
-      default:
-        return <span className="badge badge-draft">Draft</span>;
+  const handleSendResponse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!responseText.trim()) return;
+    setIsSubmittingResponse(true);
+    try {
+      const targetCase = complaints.find(c => c.id === selectedCaseId || c.case_id === selectedCaseId);
+      if (targetCase) {
+        await complaintService.addRemark(
+          targetCase.id,
+          `[INSTITUTION OFFICIAL COMPLIANCE RESPONSE]\n${responseText}`,
+          currentUser?.full_name || 'Institution Registrar'
+        );
+        alert('Institutional response submitted to AICTE Bureau desk.');
+        setShowResponseModal(false);
+        setResponseText('');
+        await loadData();
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsSubmittingResponse(false);
     }
   };
 
-  // Urgent notice if any application has deficiencies requiring correction
-  const urgentApp = applications.find(a => a.status === 'Action Required' || a.overall_validation_outcome === 'Failed');
+  // Urgent notice if any complaint has an official notice awaiting response
+  const urgentCase = complaints.find(c => c.status === 'Awaiting Information' || c.status === 'Action Required');
 
   return (
     <div className="app-container" style={{ paddingBottom: '60px' }}>
@@ -128,97 +128,98 @@ export const InstitutionDashboard: React.FC = () => {
             {institution?.aishe_code && (
               <span>• AISHE: <strong>{institution.aishe_code}</strong></span>
             )}
+            <span>• Region: <strong>{institution?.region || 'Northern'}</strong></span>
           </div>
           <h1 className="dashboard-main-title">
-            {institution?.name || 'Institution Approval Portal'}
+            {institution?.name || 'Institution Complaint & Compliance Status Portal'}
           </h1>
           <p className="dashboard-sub-title">
-            {institution?.address ? `${institution.address}, ${institution.city}, ${institution.state}` : 'Manage institutional approval dossiers, upload regulatory deeds, and monitor scrutiny findings.'}
+            {institution?.address ? `${institution.address}, ${institution.city}, ${institution.state}` : 'Centralized repository of grievance dockets, compliance directives, and inquiry responses.'}
           </p>
         </div>
 
         <div className="header-action-group">
           <button 
-            onClick={() => setShowNewAppModal(true)}
-            className="btn btn-emerald-primary btn-sm"
-          >
-            <Plus size={15} />
-            File New Application
-          </button>
-
-          <button 
             onClick={loadData} 
             className="btn btn-outline-clean btn-sm"
-            title="Refresh application list"
+            title="Refresh complaint queue"
           >
             <RefreshCw size={14} />
-            Refresh
+            Refresh Queue
           </button>
         </div>
       </div>
 
-      {/* Urgent Deficiency Notice if Action Required */}
-      {urgentApp && (
+      {/* Urgent Notice Banner if Action Required / Awaiting Information */}
+      {urgentCase && (
         <div className="action-required-banner">
           <div className="banner-left">
             <AlertTriangle size={20} className="text-rose" />
             <div>
-              <div className="banner-title">Action Required on Application {urgentApp.application_number}</div>
-              <div className="banner-desc">Automated validation detected regulatory omissions or expired certificates. Please inspect findings and upload corrected deeds.</div>
+              <div className="banner-title">Statutory Inquiry Response Required: Case {urgentCase.case_id || urgentCase.application_number}</div>
+              <div className="banner-desc">
+                {urgentCase.bureau || 'AICTE Bureau'} has requested clarification or certified records regarding <strong>{urgentCase.complaint_category}</strong>.
+              </div>
             </div>
           </div>
-          <Link to={`/applications/${urgentApp.id}`} className="btn btn-rose-subtle btn-sm">
-            Resolve Issues
+          <button 
+            onClick={() => {
+              setSelectedCaseId(urgentCase.id);
+              setShowResponseModal(true);
+            }} 
+            className="btn btn-rose-subtle btn-sm"
+          >
+            Submit Response
             <ArrowRight size={14} />
-          </Link>
+          </button>
         </div>
       )}
 
       {/* Responsive Metrics Grid with 5 Standard Metrics */}
       <div className="metrics-grid-5">
         <div className="metric-box">
-          <div className="metric-label">Total Applications</div>
-          <div className="metric-val">{totalApplications}</div>
-          <div className="metric-sub">Submitted dossiers</div>
+          <div className="metric-label">Total Dockets</div>
+          <div className="metric-val">{totalComplaints}</div>
+          <div className="metric-sub">Registered complaints</div>
         </div>
 
         <div className="metric-box border-rose">
-          <div className="metric-label text-rose">Action Required</div>
-          <div className="metric-val text-rose">{actionRequired}</div>
-          <div className="metric-sub">Requires resubmission</div>
-        </div>
-
-        <div className="metric-box border-amber">
-          <div className="metric-label text-amber">Awaiting Review</div>
-          <div className="metric-val text-amber">{awaitingReview}</div>
-          <div className="metric-sub">Queued for committee</div>
+          <div className="metric-label text-rose">Response Awaited</div>
+          <div className="metric-val text-rose">{awaitingInfo}</div>
+          <div className="metric-sub">Action required from college</div>
         </div>
 
         <div className="metric-box border-blue">
-          <div className="metric-label text-blue">Under Review</div>
-          <div className="metric-val text-blue">{underReview}</div>
-          <div className="metric-sub">Officer inspection</div>
+          <div className="metric-label text-blue">Under Inquiry</div>
+          <div className="metric-val text-blue">{underProcess}</div>
+          <div className="metric-sub">Bureau fact-finding</div>
+        </div>
+
+        <div className="metric-box border-amber">
+          <div className="metric-label text-amber">Pending Scrutiny</div>
+          <div className="metric-val text-amber">{pendingScrutiny}</div>
+          <div className="metric-sub">Awaiting desk review</div>
         </div>
 
         <div className="metric-box border-emerald">
-          <div className="metric-label text-emerald">Review Completed</div>
-          <div className="metric-val text-emerald">{reviewCompleted}</div>
-          <div className="metric-sub">Approved / Signed off</div>
+          <div className="metric-label text-emerald">Disposed / Closed</div>
+          <div className="metric-val text-emerald">{disposedCases}</div>
+          <div className="metric-sub">Resolved / Order issued</div>
         </div>
       </div>
 
-      {/* Applications Table Card */}
+      {/* Complaints Table Card */}
       <div className="dashboard-content-card">
         <div className="dashboard-table-header">
           <div>
-            <h2 className="table-heading">Institution Applications</h2>
+            <h2 className="table-heading">Institution Complaint Dockets</h2>
             <div className="table-subheading">
-              Showing {applications.length} submitted institutional {applications.length === 1 ? 'dossier' : 'dossiers'}
+              Showing {complaints.length} registered complaint {complaints.length === 1 ? 'docket' : 'dockets'}
             </div>
           </div>
 
           <div className="table-quick-tabs">
-            {['All', 'Action Required', 'Awaiting Official Review', 'Review Completed'].map(st => (
+            {['All', 'Awaiting Information', 'Under Process', 'Disposed'].map(st => (
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
@@ -237,7 +238,7 @@ export const InstitutionDashboard: React.FC = () => {
             <input
               type="text"
               className="table-search-input"
-              placeholder="Search by application number or type..."
+              placeholder="Search by Case ID, category, or keyword..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
             />
@@ -248,11 +249,11 @@ export const InstitutionDashboard: React.FC = () => {
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
           >
-            <option value="All">All Scrutiny Statuses</option>
-            <option value="Action Required">Action Required</option>
-            <option value="Awaiting Official Review">Awaiting Official Review</option>
-            <option value="Under Review">Under Review</option>
-            <option value="Review Completed">Review Completed</option>
+            <option value="All">All Complaint Statuses</option>
+            <option value="Awaiting Information">Awaiting Information (Action Required)</option>
+            <option value="Under Process">Under Process</option>
+            <option value="Transferred">Transferred</option>
+            <option value="Disposed">Disposed / Closed</option>
           </select>
         </div>
 
@@ -260,133 +261,112 @@ export const InstitutionDashboard: React.FC = () => {
         {loading ? (
           <div className="empty-loading-state">
             <RefreshCw size={24} className="spin text-emerald-600" />
-            <p>Loading application dossiers...</p>
+            <p>Loading institutional complaint records...</p>
           </div>
-        ) : applications.length === 0 ? (
+        ) : complaints.length === 0 ? (
           <div className="empty-loading-state">
             <FileText size={36} className="text-muted" />
-            <h3 className="empty-title">No Applications Found</h3>
-            <p className="empty-desc">Your institution has not submitted any approval dossiers matching this criteria.</p>
-            <button 
-              onClick={() => setShowNewAppModal(true)}
-              className="btn btn-emerald-primary btn-sm"
-              style={{ marginTop: '12px' }}
-            >
-              <Plus size={14} />
-              File First Application
-            </button>
+            <h3 className="empty-title">No Active Complaints Found</h3>
+            <p className="empty-desc">No complaints or grievance dockets are currently registered under this institution's AICTE Permanent ID.</p>
           </div>
         ) : (
           <div className="table-responsive-wrapper">
             <table className="clean-data-table">
               <thead>
                 <tr>
-                  <th>Application Number</th>
-                  <th>Application Type</th>
-                  <th>Academic Year</th>
-                  <th>Validation Outcome</th>
-                  <th>Scrutiny Status</th>
+                  <th>Case ID &amp; Complainant</th>
+                  <th>Responsible Bureau &amp; Category</th>
+                  <th>Status</th>
+                  <th>SLA Target &amp; Directive</th>
                   <th style={{ textAlign: 'right' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {applications.map(app => (
-                  <tr key={app.id}>
-                    <td>
-                      <Link to={`/applications/${app.id}`} className="app-link">
-                        {app.application_number}
-                      </Link>
-                      {app.is_synthetic_demo && (
-                        <span className="demo-indicator-pill" style={{ marginLeft: '8px' }}>Demo Case</span>
-                      )}
-                    </td>
+                {complaints.map(app => {
+                  const caseId = app.case_id || app.application_number;
+                  const isAwaiting = app.status === 'Awaiting Information' || app.status === 'Action Required';
 
-                    <td>
-                      <div className="app-cell-type">{app.application_type}</div>
-                    </td>
+                  return (
+                    <tr key={app.id} style={isAwaiting ? { backgroundColor: '#fff1f2' } : undefined}>
+                      <td>
+                        <Link to={`/applications/${app.id}`} className="app-link" style={{ fontWeight: 700 }}>
+                          {caseId}
+                        </Link>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Complainant: {app.complainant_name || 'Stakeholder'} ({app.complainant_type || 'Student'})
+                        </div>
+                      </td>
 
-                    <td>
-                      <span className="app-cell-year">{app.academic_year}</span>
-                    </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {app.bureau || app.receiving_bureau || 'Public Grievance Redressal Cell (PGRC)'}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {app.complaint_category || app.application_type}
+                        </div>
+                      </td>
 
-                    <td>
-                      {getValidationBadge(app.overall_validation_outcome)}
-                    </td>
+                      <td>
+                        {getStatusBadge(app.status)}
+                      </td>
 
-                    <td>
-                      {getStatusBadge(app.status)}
-                    </td>
+                      <td>
+                        <div style={{ fontSize: '0.8125rem', fontWeight: 600 }}>
+                          Target: {app.expected_disposal_date || '30 days'}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', maxWidth: '240px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {app.next_action_required || 'Under Bureau Scrutiny'}
+                        </div>
+                      </td>
 
-                    <td style={{ textAlign: 'right' }}>
-                      <Link
-                        to={`/applications/${app.id}`}
-                        className="btn btn-outline-clean btn-xs"
-                      >
-                        View Dossier
-                        <ChevronRight size={13} />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                      <td style={{ textAlign: 'right' }}>
+                        <Link
+                          to={`/applications/${app.id}`}
+                          className="btn btn-outline-clean btn-xs"
+                          style={isAwaiting ? { borderColor: '#e11d48', color: '#be123c' } : undefined}
+                        >
+                          View Details
+                          <ChevronRight size={13} />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* New Application Modal */}
-      {showNewAppModal && (
-        <div className="modal-overlay" onClick={() => setShowNewAppModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
-            <div className="modal-header">
-              <h2>File Regulatory Approval Application</h2>
-              <button onClick={() => setShowNewAppModal(false)} className="modal-close-btn">✕</button>
-            </div>
-            <div style={{ padding: '20px' }}>
-              <div className="form-group">
-                <label className="form-label">Application Type</label>
-                <select
-                  className="form-input"
-                  value={selectedAppType}
-                  onChange={e => setSelectedAppType(e.target.value as ApplicationType)}
-                >
-                  <option value="Extension of Approval (EoA)">Extension of Approval (EoA)</option>
-                  <option value="New Institution Approval">New Institution Approval</option>
-                  <option value="Increase in Intake">Increase in Intake</option>
-                  <option value="Introduction of New Course / Faculty">Introduction of New Course / Faculty</option>
-                  <option value="Change in Site / Campus Location">Change in Site / Campus Location</option>
-                </select>
+      {/* MODAL: Submit Institutional Response */}
+      {showResponseModal && (
+        <div className="modal-overlay" onClick={() => setShowResponseModal(false)}>
+          <div className="modal-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <form onSubmit={handleSendResponse} className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Submit Official Compliance Response to AICTE</h3>
+                <button type="button" onClick={() => setShowResponseModal(false)} className="close-btn">✕</button>
               </div>
-
-              <div className="form-group">
-                <label className="form-label">Academic Year</label>
-                <select
-                  className="form-input"
-                  value={academicYear}
-                  onChange={e => setAcademicYear(e.target.value)}
-                >
-                  <option value="2026-2027">2026-2027 (Current Cycle)</option>
-                  <option value="2027-2028">2027-2028</option>
-                </select>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Explanation / Compliance Statement *</label>
+                  <textarea 
+                    required 
+                    rows={5} 
+                    className="form-input"
+                    placeholder="Enter formal response from Principal/Registrar regarding the inquiry directive..."
+                    value={responseText}
+                    onChange={e => setResponseText(e.target.value)}
+                  />
+                </div>
               </div>
-
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '24px' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowNewAppModal(false)}
-                  className="btn btn-secondary-subtle"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCreateApplication}
-                  className="btn btn-emerald-primary"
-                >
-                  Initialize Application
+              <div className="modal-footer">
+                <button type="button" onClick={() => setShowResponseModal(false)} className="btn btn-outline-clean btn-sm">Cancel</button>
+                <button type="submit" disabled={isSubmittingResponse} className="btn btn-emerald-primary btn-sm">
+                  {isSubmittingResponse ? 'Submitting...' : 'Submit Compliance Response'}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
