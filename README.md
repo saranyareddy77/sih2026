@@ -7,7 +7,7 @@ AI-Powered Institutional Application Verification & Compliance Platform
 
 🌐 **Institutional Verification Application:** https://sih2026-jefo.onrender.com
 
-💻 **GitHub Repository:** saranyareddy77/sih2026
+💻 **GitHub Repository:**  saranyareddy77/sih2026
 
 The application provides a centralized interface for institutions to register, submit institutional applications, upload supporting documents, and track verification status. Administrators can review applications, verify documents, identify missing or expired certificates, and monitor institutional compliance.
 
