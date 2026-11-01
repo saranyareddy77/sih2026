@@ -1,302 +1,241 @@
-# 🛡️ AICTE SMARTVERIFY
-AI-Powered Institutional Application Verification & Compliance Platform
 
-**Live Demo** | **GitHub**
+<div align="center">
 
-## 🚀 Live Demo
+# 🎓 AICTE SmartVerify
 
-🌐 **Institutional Verification Application:** https://sih2026-jefo.onrender.com
+### AI-Powered Document Verification and Application Scrutiny Platform
 
-💻 **GitHub Repository:**  saranyareddy77/sih2026
+<p>
+  <a href="https://sih2026-jefo.onrender.com">
+    <img src="https://img.shields.io/badge/🚀_Live_Demo-Visit_Project-2ea44f?style=for-the-badge" alt="Live Demo"/>
+  </a>
+  <a href="https://github.com/saranyareddy77/sih2026">
+    <img src="https://img.shields.io/badge/GitHub-View_Repository-181717?style=for-the-badge&logo=github" alt="GitHub Repository"/>
+  </a>
+</p>
 
-The application provides a centralized interface for institutions to register, submit institutional applications, upload supporting documents, and track verification status. Administrators can review applications, verify documents, identify missing or expired certificates, and monitor institutional compliance.
+<p>
+  <img src="https://img.shields.io/badge/React-Frontend-61DAFB?style=flat&logo=react&logoColor=black"/>
+  <img src="https://img.shields.io/badge/Vite-Build_Tool-646CFF?style=flat&logo=vite&logoColor=white"/>
+  <img src="https://img.shields.io/badge/TypeScript-Language-3178C6?style=flat&logo=typescript&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Supabase-Backend-3FCF8E?style=flat&logo=supabase&logoColor=white"/>
+  <img src="https://img.shields.io/badge/PostgreSQL-Database-4169E1?style=flat&logo=postgresql&logoColor=white"/>
+</p>
 
-## 📖 About the Project
+</div>
 
-AICTE SmartVerify is an institutional application verification platform designed to simplify document scrutiny and compliance assessment.
+---
 
-The platform allows institutions to register and log in using their own credentials, submit applications, and upload supporting documents. The system helps administrators review submitted information, identify document-related issues, and manage the institutional application verification process.
+## 📌 About the Project
 
-The platform provides separate access for Institution Users, Super Admins, and Scrutiny Officers. Each role has its own permissions and dashboard for managing the verification workflow.
+**AICTE SmartVerify** is a smart document verification and application scrutiny platform designed to streamline institutional application processing.
+
+The platform provides a centralized system where institutions can submit applications and supporting documents, while authorized administrative users can review submissions, verify documents, track application progress, and provide feedback.
+
+It aims to improve transparency, reduce manual verification effort, and make the application scrutiny process more organized and efficient.
+
+---
+
+## 👩‍💻 Project Repository
+
+**GitHub:** https://github.com/saranyareddy77/sih2026
+
+**Live Demo:** https://sih2026-jefo.onrender.com
+
+---
+
+## 🎯 Key Objectives
+
+- Simplify institutional application submission.
+- Centralize document uploads and application records.
+- Support efficient document scrutiny and verification.
+- Provide role-based access for different users.
+- Enable application status tracking.
+- Improve transparency through feedback and correction workflows.
+- Reduce repetitive manual verification work.
+
+---
 
 ## ✨ Key Features
 
-🏢 Institution registration and login  
-📝 Institutional application submission  
-📂 Secure document upload and management  
-🔎 Automated document verification  
-⚠️ Expired certificate identification  
-📋 Missing document detection  
-🔐 Duplicate document detection  
-📊 Compliance validation  
-📌 Application status tracking  
-👨‍💼 Super Admin dashboard  
-🧑‍💻 Scrutiny Officer dashboard  
-📑 Application review and scrutiny  
-🔄 Review feedback and correction workflow  
-🔒 Role-based access control  
-🗄️ Supabase database integration  
-📄 Document processing and validation  
+### 🏢 Institution User
 
-## 🛠️ Technology Stack
+- Institution registration and login.
+- Submit institutional applications.
+- Upload supporting documents.
+- View submitted application details.
+- Track application status.
+- Receive scrutiny feedback.
+- Review correction requests and update submissions.
 
-### 🎨 Frontend
+### 🛡️ Super Admin
 
-⚛️ React  
-⚡ Vite  
-🔷 TypeScript  
-🎨 CSS  
+- Administrative dashboard.
+- View and oversee applications.
+- Monitor application processing.
+- Manage administrative operations.
+- Track scrutiny progress.
 
-### ⚙️ Backend & Database
+### 🔍 Scrutiny Officer
 
-🗄️ Supabase  
-🐘 PostgreSQL  
-🔐 Supabase Authentication  
-📂 Supabase Storage  
+- Access assigned or available applications.
+- Review submitted documents.
+- Examine application information.
+- Record verification findings.
+- Provide feedback and correction requests.
+- Support application scrutiny workflows.
 
 ### 📄 Document Verification
 
-PDF.js  
-Python (if integrated)  
-SHA-256 document hashing  
-Document validation  
-Compliance checking  
-Duplicate document detection  
+- Document upload and storage.
+- PDF document viewing using PDF.js.
+- SHA-256 hashing support for document integrity checks, where implemented.
+- Validation workflows for reviewing submitted documents.
+- Structured feedback for document-related issues.
 
-## 🔄 How It Works
+---
 
-The application follows a structured institutional verification workflow:
+## 🧰 Technology Stack
 
-1. 🌐 Open the AICTE SmartVerify application.
-2. 📝 Register as an institution user.
-3. 🔐 Log in using institutional credentials.
-4. 🏢 Enter institutional application details.
-5. 📂 Upload the required supporting documents.
-6. 🚀 Submit the institutional application.
-7. 🔎 Process the submitted application and documents.
-8. ⚠️ Identify missing or expired documents where applicable.
-9. 🔐 Check for duplicate documents.
-10. 📊 Perform configured compliance validations.
-11. 👨‍💼 Administrators access submitted applications.
-12. 📋 Super Admins and Scrutiny Officers review application details.
-13. 🔄 Review findings and feedback are provided to the institution.
-14. 📌 Institutions track their application status.
-15. ✅ Applications proceed through the configured review workflow.
-
-## 📄 Institutional Application Verification
-
-For every submitted application, the platform provides a structured verification process containing:
-
-**Institution Details**
-
-Institution name and submitted institutional information.
-
-**Application Details**
-
-Information provided by the institution during application submission.
-
-**Document Verification**
-
-Review and validation of uploaded supporting documents.
-
-**Missing Documents**
-
-Identification of required documents that have not been submitted.
-
-**Expired Certificates**
-
-Identification of certificates that have passed their validity period.
-
-**Duplicate Document Detection**
-
-Identification of duplicate uploaded documents using document comparison and hashing where implemented.
-
-**Compliance Assessment**
-
-Validation of submitted information against configured requirements.
-
-**Verification Findings**
-
-Details of issues identified during document scrutiny.
-
-**Review Feedback**
-
-Feedback and correction requirements communicated to institutions.
-
-**Application Status**
-
-Current progress of the application through the verification workflow.
-
-## 📋 Application Verification Report
-
-| Field | Information |
+| Category | Technologies |
 |---|---|
-| Institution Name | Registered institution name |
-| Application Details | Submitted application information |
-| Submitted Documents | Uploaded supporting documents |
-| Missing Documents | Required documents not submitted |
-| Expired Certificates | Certificates past their validity |
-| Duplicate Documents | Duplicate document findings |
-| Compliance Status | Compliance assessment |
-| Verification Findings | Identified document issues |
-| Scrutiny Officer | Reviewing officer |
-| Review Feedback | Administrative observations |
-| Application Status | Current application progress |
+| Frontend | React, Vite, TypeScript |
+| Styling | CSS |
+| Backend Services | Supabase |
+| Database | PostgreSQL |
+| Authentication | Supabase Auth |
+| File Storage | Supabase Storage |
+| PDF Processing | PDF.js |
+| Document Integrity | SHA-256 hashing, where implemented |
 
-## 🧪 Example Verification
+---
 
-### ⚠️ Expired Institutional Certificate
+## 🏗️ System Modules
 
-**Description:**
+| Module | Description |
+|---|---|
+| Authentication | Secure user login and role-based access |
+| Institution Dashboard | Application submission and tracking |
+| Application Management | View and manage submitted applications |
+| Document Management | Upload, store, and access documents |
+| Document Scrutiny | Review and verify submitted documents |
+| Feedback Management | Provide corrections and verification feedback |
+| Admin Dashboard | Administrative monitoring and oversight |
 
-An uploaded institutional certificate is identified as having a validity date that has already passed.
-
-**Affected Component:**
-
-Institutional document verification.
-
-**Finding:** Expired Certificate
-
-**Verification Process:**
-
-1. Open the submitted institutional application.
-2. Access the uploaded certificate.
-3. Inspect the certificate validity information.
-4. Compare the expiry date with the verification date.
-5. Identify the certificate as expired when applicable.
-6. Record the verification finding.
-7. Make the finding available for administrative review.
-
-**Evidence:**
-
-Uploaded certificate and its relevant validity information.
-
-**Business Impact:**
-
-An expired certificate may not satisfy the applicable institutional documentation requirement.
-
-**Recommendation:**
-
-Request a valid, updated certificate from the institution.
+---
 
 ## 👥 User Roles
 
-### 🏢 Institution User
+| User Role | Responsibilities |
+|---|---|
+| Institution User | Submit applications, upload documents, track status, and respond to feedback |
+| Super Admin | Oversee applications and monitor administrative activities |
+| Scrutiny Officer | Review applications and documents and provide scrutiny feedback |
 
-- Register using an institutional email address.
-- Log in using personal registration credentials.
-- Submit institutional applications.
-- Upload required supporting documents.
-- Track application verification status.
-- View review findings and feedback.
-- Submit corrections when required.
+---
 
-### 👨‍💼 Super Admin
+## 🔐 Admin Evaluation Credentials
 
-- Access the Super Admin dashboard.
-- Oversee institutional applications.
-- Monitor verification and scrutiny activities.
-- Manage administrative operations according to assigned permissions.
-- Review application progress.
+The following accounts are intended for authorized evaluation and role-based dashboard testing.
 
-### 🧑‍💻 Scrutiny Officer
+| Role | Login Email | Password |
+|---|---|---|
+| Super Admin | director.approval@aicte-india.org | SuperAdminPassword2026! |
+| Scrutiny Officer | scrutiny.officer@aicte-india.org | ScrutinyOfficerPassword2026! |
 
-- Access the Scrutiny Officer dashboard.
-- Review submitted institutional applications.
-- Verify supporting documents.
-- Examine missing or expired document findings.
-- Provide scrutiny feedback.
-- Track application review progress.
+**Evaluation note:** Replace the password placeholders with the approved evaluation credentials in the access-restricted evaluation copy. Do not publish reusable passwords in a public repository.
 
-## 🔐 Admin Login Credentials
+---
 
-Administrative access is restricted to authorized administrator accounts. Institution users cannot access administrative dashboards using their institution accounts.
+## 🔄 Application Workflow
 
-### 👨‍💼 Super Admin
+1. Institution user registers or logs in.
+2. Institution submits an application.
+3. Required supporting documents are uploaded.
+4. Application information and documents become available for scrutiny.
+5. Scrutiny Officer reviews the application.
+6. Verification findings and feedback are recorded.
+7. Institution user views the application status and feedback.
+8. Institution can make requested corrections where applicable.
+9. Super Admin monitors the overall application process.
 
-- **Email:** `director.approval@aicte-india.org`
-- **Password:** Shared privately with the authorized Super Admin.
-- **Role:** Super Admin
-- **Access:** Super Admin Dashboard
+---
 
-### 🧑‍💻 Scrutiny Officer
+## 🧪 Example Verification Scenario
 
-- **Email:** `scrutiny.officer@aicte-india.org`
-- **Password:** Shared privately with the authorized Scrutiny Officer.
-- **Role:** Scrutiny Officer
-- **Access:** Scrutiny Officer Dashboard
+**Scenario: Institutional Document Review**
 
-### 🔒 Admin Access Control
+| Item | Example |
+|---|---|
+| Submitted Document | Institutional Certificate |
+| Document Status | Requires Review |
+| Scrutiny Action | Document examination |
+| Finding | Required information is missing |
+| Feedback | Institution must submit a corrected document |
+| Next Step | Institution uploads the corrected document |
 
-- Only authorized administrator accounts should access admin dashboards.
-- Institution users must register and log in through the institution portal.
-- Admin permissions must be assigned through secure role-based authorization.
-- Administrative access must be validated by the backend.
-- Supabase Row Level Security (RLS) should protect application data and administrative operations.
-- Admin credentials must be kept confidential and shared only with authorized personnel.
+This demonstrates how the platform can support a structured document scrutiny and correction workflow.
 
-## 🏗️ Project Architecture
+---
+
+## 🌟 Benefits
+
+- Centralized institutional application management.
+- Improved document review organization.
+- Role-based access and responsibilities.
+- Better visibility into application progress.
+- Structured scrutiny feedback.
+- Reduced manual coordination.
+- Improved transparency in application processing.
+
+---
+
+## 🏛️ System Architecture
 
 ```text
-                   👤 Institution User
-                           |
-                           v
-                 🌐 AICTE SmartVerify UI
-                           |
-                           v
-                  🔐 User Authentication
-                           |
-                           v
-                📝 Institutional Application
-                           |
-                           v
-                    📂 Document Upload
-                           |
-                           v
-                 🗄️ Supabase Storage
-                           |
-                           v
-                 🔎 Document Verification
-                           |
-                  +--------+--------+
-                  |        |        |
-                  v        v        v
-               Missing  Expired  Duplicate
-               Documents Documents Documents
-                  |        |        |
-                  +--------+--------+
-                           |
-                           v
-                  📊 Compliance Checks
-                           |
-                           v
-                  📋 Verification Results
-                           |
-                           v
-                   👨‍💼 Admin Dashboard
-                           |
-                  +--------+--------+
-                  |                 |
-                  v                 v
-              Super Admin     Scrutiny Officer
-                  |                 |
-                  +--------+--------+
-                           |
-                           v
-                   📑 Application Review
-                           |
-                           v
-                    🔄 Review Feedback
-                           |
-                           v
-                   👤 Institution User
-                           |
-                           v
-                    📌 Status Tracking
+                 ┌─────────────────────────────┐
+                 │          USERS              │
+                 └──────────────┬──────────────┘
+                                │
+             ┌──────────────────┼──────────────────┐
+             │                  │                  │
+             ▼                  ▼                  ▼
+     ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+     │ Institution  │   │ Super Admin  │   │  Scrutiny    │
+     │    User      │   │              │   │   Officer    │
+     └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
+            │                  │                  │
+            └──────────────────┼──────────────────┘
+                               │
+                               ▼
+                  ┌────────────────────────┐
+                  │     React + Vite       │
+                  │    TypeScript UI       │
+                  └────────────┬───────────┘
+                               │
+                               ▼
+                  ┌────────────────────────┐
+                  │    Supabase Services   │
+                  ├────────────────────────┤
+                  │ Authentication         │
+                  │ Application Services   │
+                  │ File Storage           │
+                  └────────────┬───────────┘
+                               │
+                  ┌────────────┴───────────┐
+                  │                        │
+                  ▼                        ▼
+         ┌────────────────┐      ┌────────────────┐
+         │  PostgreSQL    │      │ Supabase       │
+         │   Database     │      │ File Storage   │
+         └────────────────┘      └────────────────┘
+                  │
+                  ▼
+         ┌────────────────────┐
+         │ Document Review    │
+         │ PDF.js Processing  │
+         │ SHA-256 Checks     │
+         │ Where Implemented  │
+         └────────────────────┘
 ```
 
-## 🎯 Project Objective
-
-To make institutional application verification more efficient, transparent, and reliable through automated document checks, secure digital document management, and centralized administrative scrutiny.
-
-**AICTE SmartVerify — Making Institutional Verification Smarter, Faster, and More Transparent.**
