@@ -119,7 +119,7 @@ export class SyntheticStateRegistryProvider implements AuthorityProvider {
         mismatchedFields: [
           {
             field: 'institutionName',
-            requestedValue: request.institutionName,
+            requestedValue: request.institutionName || 'Unknown',
             authorityValue: 'Registered Trust: Greenfield Technical & Educational Foundation'
           }
         ],

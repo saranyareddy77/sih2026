@@ -15,14 +15,13 @@ import {
   AuthorityVerificationResult
 } from '../types';
 import { SYNTHETIC_APPLICATIONS, SYNTHETIC_INSTITUTIONS } from '../data/syntheticDemoData';
-import { runApplicationValidation } from './validationService';
+import { runApplicationValidation, REQUIRED_DOCUMENTS_BY_TYPE } from './validationService';
 import { notificationService } from './notificationService';
 import { authorityVerificationService } from './authorityVerificationService';
 import { documentService } from './documentService';
-
 import { complaintService } from './complaintService';
 
-const APPLICATIONS_STORAGE_KEY = 'aicte_smartverify_applications_data';
+const APPLICATIONS_STORAGE_KEY = 'aicte_smartverify_applications_data_v2';
 
 class ApplicationService {
   private applications: Application[] = [];
@@ -32,35 +31,40 @@ class ApplicationService {
   }
 
   private loadApplications() {
-    const saved = localStorage.getItem(APPLICATIONS_STORAGE_KEY);
-    if (saved) {
-      try {
-        this.applications = JSON.parse(saved);
-        return;
-      } catch (e) {
-        console.warn('Failed to parse cached applications:', e);
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem(APPLICATIONS_STORAGE_KEY);
+      if (saved) {
+        try {
+          this.applications = JSON.parse(saved);
+          return;
+        } catch (e) {
+          console.warn('Failed to parse cached applications:', e);
+        }
       }
     }
     // Seed with 10 synthetic applications
-    this.applications = [...SYNTHETIC_APPLICATIONS];
+    this.applications = JSON.parse(JSON.stringify(SYNTHETIC_APPLICATIONS));
     this.saveLocal();
   }
 
   private saveLocal() {
-    localStorage.setItem(APPLICATIONS_STORAGE_KEY, JSON.stringify(this.applications));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(APPLICATIONS_STORAGE_KEY, JSON.stringify(this.applications));
+    }
   }
 
   /**
    * Reset data to the fresh 10 synthetic applications
    */
   resetToSyntheticDefaults() {
-    this.applications = [...SYNTHETIC_APPLICATIONS];
+    this.applications = JSON.parse(JSON.stringify(SYNTHETIC_APPLICATIONS));
     this.saveLocal();
     complaintService.resetToDefaults();
   }
 
   /**
    * Fetch all applications / complaints, optionally filtered
+   * Supports both Approval Applications and Complaint Dockets
    */
   async getApplications(options?: {
     institutionId?: string;
@@ -74,28 +78,113 @@ class ApplicationService {
     priority?: string | 'All';
     overlapOnly?: boolean;
     overdueOnly?: boolean;
+    docketType?: 'approvals' | 'complaints' | 'all';
   }): Promise<Application[]> {
-    return complaintService.getComplaints({
-      institutionId: options?.institutionId,
-      status: options?.status,
-      searchTerm: options?.searchTerm,
-      bureau: options?.bureau,
-      category: options?.category,
-      region: options?.region,
-      priority: options?.priority,
-      overlapOnly: options?.overlapOnly,
-      overdueOnly: options?.overdueOnly
-    });
+    // If specific complaint options are provided and docketType !== 'approvals', delegate to complaintService
+    if ((options?.bureau && options.bureau !== 'All') || 
+        (options?.category && options.category !== 'All') || 
+        options?.overlapOnly || 
+        options?.overdueOnly ||
+        options?.docketType === 'complaints') {
+      return complaintService.getComplaints({
+        institutionId: options?.institutionId,
+        status: options?.status,
+        searchTerm: options?.searchTerm,
+        bureau: options?.bureau,
+        category: options?.category,
+        region: options?.region,
+        priority: options?.priority,
+        overlapOnly: options?.overlapOnly,
+        overdueOnly: options?.overdueOnly
+      });
+    }
+
+    // Query Supabase if online
+    if (isConfigured) {
+      try {
+        let query = supabase.from('applications').select('*, documents:application_documents(*)');
+        if (options?.institutionId) {
+          query = query.eq('institution_id', options.institutionId);
+        }
+        const { data, error } = await query;
+        if (!error && data && data.length > 0) {
+          const dbIds = new Set(data.map(d => d.id));
+          const localOnly = this.applications.filter(a => !dbIds.has(a.id));
+          this.applications = [...data, ...localOnly];
+          this.saveLocal();
+        }
+      } catch (err) {
+        console.warn('Supabase getApplications notice:', err);
+      }
+    }
+
+    // Filter approval applications
+    let results = [...this.applications];
+
+    if (options?.institutionId) {
+      results = results.filter(a => 
+        a.institution_id === options.institutionId || 
+        a.institution?.id === options.institutionId
+      );
+    }
+
+    if (options?.status && options.status !== 'All') {
+      results = results.filter(a => a.status === options.status);
+    }
+
+    if (options?.applicationType && options.applicationType !== 'All') {
+      results = results.filter(a => a.application_type === options.applicationType);
+    }
+
+    if (options?.validationOutcome && options.validationOutcome !== 'All') {
+      results = results.filter(a => a.overall_validation_outcome === options.validationOutcome);
+    }
+
+    if (options?.searchTerm && options.searchTerm.trim()) {
+      const q = options.searchTerm.trim().toLowerCase();
+      results = results.filter(a => 
+        (a.application_number && a.application_number.toLowerCase().includes(q)) ||
+        (a.institution?.name && a.institution.name.toLowerCase().includes(q)) ||
+        (a.institution?.code && a.institution.code.toLowerCase().includes(q)) ||
+        (a.application_type && a.application_type.toLowerCase().includes(q)) ||
+        (a.case_id && a.case_id.toLowerCase().includes(q))
+      );
+    }
+
+    return results;
   }
 
   /**
    * Get single application / complaint by ID with full details
    */
   async getApplicationById(id: string): Promise<Application | null> {
-    return complaintService.getComplaintById(id);
+    const local = this.applications.find(a => a.id === id || a.application_number === id || a.case_id === id);
+    if (local) return local;
+
+    // Check complaint service
+    const comp = await complaintService.getComplaintById(id);
+    if (comp) return comp;
+
+    if (isConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from('applications')
+          .select('*, documents:application_documents(*), findings:validation_findings(*)')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (!error && data) {
+          return data as Application;
+        }
+      } catch (err) {
+        console.warn('Supabase getApplicationById notice:', err);
+      }
+    }
+
+    return null;
   }
 
-  // Complaint Management Operations Delegations
+  // --- Complaint Management Operations Delegations ---
   async transferComplaint(complaintId: string, fromBureau: string, toBureau: string, reason: string, actor: string) {
     return complaintService.transferComplaint(complaintId, fromBureau, toBureau, reason, actor);
   }
@@ -133,19 +222,48 @@ class ApplicationService {
   }
 
   /**
-   * Create a new draft application
+   * Create application draft alias
+   */
+  async createApplicationDraft(
+    institutionId: string,
+    applicationType: any,
+    academicYear: string = '2026-2027',
+    userId?: string,
+    initialDraftData?: Record<string, any>
+  ): Promise<Application> {
+    return this.createApplication(institutionId, applicationType, academicYear, userId, initialDraftData);
+  }
+
+  /**
+   * Create a new application (starts in Draft)
    */
   async createApplication(
     institutionId: string,
     applicationType: ApplicationType,
     academicYear: string = '2026-2027',
-    userId?: string
+    userId?: string,
+    initialDraftData?: Record<string, any>
   ): Promise<Application> {
-    const institution = SYNTHETIC_INSTITUTIONS.find(i => i.id === institutionId) || SYNTHETIC_INSTITUTIONS[0];
-    const appNumber = `AICTE/2026/APP-${Math.floor(1000 + Math.random() * 9000)}-DRAFT`;
+    const institution = SYNTHETIC_INSTITUTIONS.find(i => i.id === institutionId) || {
+      id: institutionId,
+      name: 'Registered Institution',
+      code: '1-REG-NEW',
+      institution_type: 'Engineering & Technology',
+      address: 'Institutional Area',
+      city: 'New Delhi',
+      state: 'Delhi',
+      pincode: '110001',
+      contact_email: 'institution@example.edu.in',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const appNumber = `AICTE/2026/APP-${randomSuffix}-DRAFT`;
+    const appId = `app-${Date.now()}`;
 
     const newApp: Application = {
-      id: `app-${Date.now()}`,
+      id: appId,
       application_number: appNumber,
       institution_id: institutionId,
       institution,
@@ -154,7 +272,14 @@ class ApplicationService {
       academic_year: academicYear,
       status: 'Draft',
       overall_validation_outcome: 'Not Checked',
-      is_synthetic_demo: true,
+      is_synthetic_demo: false,
+      step_progress: 1,
+      draft_data: initialDraftData || {
+        applicationCategory: applicationType,
+        academicYear,
+        purposeOfApplication: 'Extension of Approval for existing approved programmes and courses.',
+        intakeChangeType: 'None'
+      },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       documents: [],
@@ -163,10 +288,10 @@ class ApplicationService {
       status_history: [
         {
           id: `sh-${Date.now()}`,
-          application_id: `app-${Date.now()}`,
+          application_id: appId,
           new_status: 'Draft',
           actor_name: 'Institution User',
-          reason: 'Application initiated in Draft state.',
+          reason: `Application initiated in Draft state for ${applicationType} (${academicYear}).`,
           created_at: new Date().toISOString()
         }
       ]
@@ -175,15 +300,387 @@ class ApplicationService {
     this.applications = [newApp, ...this.applications];
     this.saveLocal();
 
-    await notificationService.createNotification({
-      title: 'Draft Application Created',
-      message: `Application ${appNumber} initiated. Please upload mandatory documents.`,
-      type: 'info',
-      application_id: newApp.id,
-      institution_id: institutionId
-    });
+    // Persist to Supabase if configured
+    if (isConfigured) {
+      try {
+        await supabase.from('applications').insert({
+          id: newApp.id,
+          application_number: newApp.application_number,
+          institution_id: newApp.institution_id,
+          created_by: userId,
+          application_type: newApp.application_type,
+          academic_year: newApp.academic_year,
+          status: 'Draft',
+          draft_data: newApp.draft_data,
+          step_progress: 1
+        });
+      } catch (err) {
+        console.warn('Supabase createApplication notice:', err);
+      }
+    }
+
+    await notificationService.notifyDraftSaved(newApp.id, newApp.application_number, institutionId, userId);
 
     return newApp;
+  }
+
+  /**
+   * Save Partial Application Draft
+   * Permits saving incomplete fields and missing documents at any step without errors.
+   */
+  async saveDraft(
+    applicationId: string, 
+    draftData: Record<string, any>, 
+    stepProgress: number = 1
+  ): Promise<Application> {
+    const appIndex = this.applications.findIndex(a => a.id === applicationId);
+    if (appIndex === -1) throw new Error(`Application ${applicationId} not found.`);
+
+    const app = this.applications[appIndex];
+    app.draft_data = {
+      ...(app.draft_data || {}),
+      ...draftData
+    };
+    app.step_progress = stepProgress;
+    app.updated_at = new Date().toISOString();
+
+    // Keep draft or validation required status
+    if (app.status === 'Ready for Submission') {
+      app.status = 'Draft';
+    }
+
+    this.applications[appIndex] = app;
+    this.saveLocal();
+
+    if (isConfigured) {
+      try {
+        await supabase
+          .from('applications')
+          .update({
+            draft_data: app.draft_data,
+            step_progress: app.step_progress,
+            updated_at: app.updated_at
+          })
+          .eq('id', applicationId);
+      } catch (err) {
+        console.warn('Supabase saveDraft notice:', err);
+      }
+    }
+
+    await notificationService.notifyDraftSaved(
+      app.id, 
+      app.application_number, 
+      app.institution_id, 
+      app.created_by
+    );
+
+    return app;
+  }
+
+  /**
+   * Delete an un-submitted draft application
+   */
+  async deleteDraft(applicationId: string): Promise<boolean> {
+    const appIndex = this.applications.findIndex(a => a.id === applicationId);
+    if (appIndex === -1) return false;
+
+    const app = this.applications[appIndex];
+    if (app.status !== 'Draft' && app.status !== 'Validation Required') {
+      throw new Error('Only draft applications can be deleted.');
+    }
+
+    this.applications = this.applications.filter(a => a.id !== applicationId);
+    this.saveLocal();
+
+    if (isConfigured) {
+      try {
+        await supabase.from('applications').delete().eq('id', applicationId);
+      } catch (err) {
+        console.warn('Supabase deleteDraft notice:', err);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Run Comprehensive Validation on Application
+   * Returns findings, outcome, and submission readiness blockers.
+   */
+  async validateApplication(
+    applicationId: string, 
+    evaluationDate: string = '2026-04-01'
+  ): Promise<{ 
+    app: Application; 
+    findings: ValidationFinding[]; 
+    outcome: ValidationOutcome; 
+    canSubmit: boolean; 
+    blockerReasons: string[];
+    mandatoryMissing: string[];
+    expiredDocs: string[];
+  }> {
+    const appIndex = this.applications.findIndex(a => a.id === applicationId);
+    if (appIndex === -1) throw new Error('Application not found');
+
+    const app = this.applications[appIndex];
+    const inst = app.institution || SYNTHETIC_INSTITUTIONS[0];
+
+    // Run the 10-factor regulatory engine
+    const { findings, overallOutcome } = runApplicationValidation(
+      app,
+      inst.name,
+      inst.code,
+      inst.address,
+      evaluationDate
+    );
+
+    app.findings = findings;
+    app.overall_validation_outcome = overallOutcome;
+
+    // Check mandatory document requirements
+    const requiredTypes = REQUIRED_DOCUMENTS_BY_TYPE[app.application_type] || REQUIRED_DOCUMENTS_BY_TYPE['Extension of Approval (EoA)'];
+    const uploadedTypes = new Set((app.documents || []).filter(d => !d.is_corrupt && d.is_active_version !== false).map(d => d.document_type));
+    
+    const mandatoryMissing = requiredTypes.filter(rt => !uploadedTypes.has(rt));
+    const expiredDocs = (app.documents || [])
+      .filter(d => d.extracted_fields?.isExpired)
+      .map(d => d.document_type);
+
+    const blockerReasons: string[] = [];
+    if (mandatoryMissing.length > 0) {
+      blockerReasons.push(`Missing mandatory statutory documents: ${mandatoryMissing.join(', ')}.`);
+    }
+    if (expiredDocs.length > 0) {
+      blockerReasons.push(`Expired statutory certificates detected: ${expiredDocs.join(', ')}.`);
+    }
+    if ((app.documents || []).some(d => d.is_corrupt)) {
+      blockerReasons.push('One or more uploaded document files are corrupt or unreadable.');
+    }
+
+    const canSubmit = blockerReasons.length === 0;
+
+    // Update status based on validation
+    if (app.status === 'Draft' || app.status === 'Validation Required' || app.status === 'Ready for Submission') {
+      app.status = canSubmit ? 'Ready for Submission' : 'Validation Required';
+    }
+
+    app.updated_at = new Date().toISOString();
+    this.applications[appIndex] = app;
+    this.saveLocal();
+
+    return {
+      app,
+      findings,
+      outcome: overallOutcome,
+      canSubmit,
+      blockerReasons,
+      mandatoryMissing,
+      expiredDocs
+    };
+  }
+
+  /**
+   * Final Submit Application
+   * Validates mandatory criteria, freezes submitted snapshot, assigns final reference,
+   * updates status to 'Submitted' -> 'Under Scrutiny', and alerts Scrutiny Officers.
+   */
+  async finalSubmitApplication(
+    applicationId: string, 
+    submitterName: string, 
+    submitterId?: string,
+    declarations?: Record<string, boolean>
+  ): Promise<{ success: boolean; application?: Application; error?: string }> {
+    const appIndex = this.applications.findIndex(a => a.id === applicationId);
+    if (appIndex === -1) return { success: false, error: 'Application not found.' };
+
+    const app = this.applications[appIndex];
+
+    // Prevent duplicate repeated submissions
+    if (app.status === 'Submitted' || app.status === 'Under Scrutiny' || app.status === 'Verified') {
+      return {
+        success: false,
+        error: `Application ${app.application_number} has already been submitted on ${app.submission_date ? new Date(app.submission_date).toLocaleString() : 'record'}. Duplicate submission attempts are prevented.`
+      };
+    }
+
+    // Run validation to enforce regulatory completeness
+    const valResult = await this.validateApplication(applicationId);
+    if (!valResult.canSubmit) {
+      return {
+        success: false,
+        error: `Application cannot be submitted due to statutory deficiencies:\n${valResult.blockerReasons.join('\n')}`
+      };
+    }
+
+    const previousStatus = app.status;
+    const submissionTime = new Date().toISOString();
+
+    // Assign permanent submission reference if draft
+    if (app.application_number.includes('-DRAFT')) {
+      app.application_number = app.application_number.replace('-DRAFT', '');
+    }
+
+    // Freeze snapshot so subsequent changes do not alter the submitted record
+    app.submission_snapshot = {
+      submitted_at: submissionTime,
+      submitted_by: submitterName,
+      submitter_id: submitterId,
+      application_number: app.application_number,
+      application_type: app.application_type,
+      academic_year: app.academic_year,
+      institution: app.institution,
+      draft_data: JSON.parse(JSON.stringify(app.draft_data || {})),
+      documents: JSON.parse(JSON.stringify(app.documents || [])),
+      findings: JSON.parse(JSON.stringify(app.findings || [])),
+      declarations: declarations || { statutoryNormsCompliant: true, dataAuthenticityAffirmed: true }
+    };
+
+    app.submission_date = submissionTime;
+    app.status = 'Submitted';
+
+    // Status transition audit log
+    app.status_history = [
+      ...(app.status_history || []),
+      {
+        id: `sh-${Date.now()}-1`,
+        application_id: app.id,
+        previous_status: previousStatus,
+        new_status: 'Submitted',
+        actor_name: submitterName,
+        reason: 'Authorized representative finalized statutory declarations and officially submitted application.',
+        created_at: submissionTime
+      },
+      {
+        id: `sh-${Date.now()}-2`,
+        application_id: app.id,
+        previous_status: 'Submitted',
+        new_status: 'Under Scrutiny',
+        actor_name: 'AICTE Workflow Gateway',
+        reason: 'Application queued for regional officer scrutiny review and document authentication.',
+        created_at: new Date(Date.now() + 1000).toISOString()
+      }
+    ];
+
+    app.status = 'Under Scrutiny';
+    app.updated_at = submissionTime;
+    this.applications[appIndex] = app;
+    this.saveLocal();
+
+    if (isConfigured) {
+      try {
+        await supabase
+          .from('applications')
+          .update({
+            application_number: app.application_number,
+            status: app.status,
+            submission_date: app.submission_date,
+            submission_snapshot: app.submission_snapshot,
+            updated_at: app.updated_at
+          })
+          .eq('id', applicationId);
+      } catch (err) {
+        console.warn('Supabase submitApplication notice:', err);
+      }
+    }
+
+    // Role-specific notifications
+    await notificationService.notifyApplicationSubmitted(
+      app.id,
+      app.application_number,
+      app.institution_id,
+      app.institution?.name || 'Institution'
+    );
+
+    return { success: true, application: app };
+  }
+
+  /**
+   * Scrutiny Officer: Issue clarification directive to institution
+   */
+  async requestClarification(
+    applicationId: string, 
+    queryText: string, 
+    officerName: string
+  ): Promise<Application> {
+    const appIndex = this.applications.findIndex(a => a.id === applicationId);
+    if (appIndex === -1) throw new Error('Application not found');
+
+    const app = this.applications[appIndex];
+    const previousStatus = app.status;
+
+    app.clarification_request = queryText;
+    app.clarification_requested_at = new Date().toISOString();
+    app.status = 'Clarification Required';
+
+    app.status_history = [
+      ...(app.status_history || []),
+      {
+        id: `sh-${Date.now()}`,
+        application_id: app.id,
+        previous_status: previousStatus,
+        new_status: 'Clarification Required',
+        actor_name: officerName,
+        reason: `Scrutiny Officer Directive: ${queryText}`,
+        created_at: new Date().toISOString()
+      }
+    ];
+
+    app.updated_at = new Date().toISOString();
+    this.applications[appIndex] = app;
+    this.saveLocal();
+
+    await notificationService.notifyClarificationRequested(
+      app.id,
+      app.application_number,
+      app.institution_id,
+      queryText
+    );
+
+    return app;
+  }
+
+  /**
+   * Institution User: Submit clarification response & certified evidence
+   */
+  async submitClarificationResponse(
+    applicationId: string, 
+    responseText: string, 
+    responderName: string
+  ): Promise<Application> {
+    const appIndex = this.applications.findIndex(a => a.id === applicationId);
+    if (appIndex === -1) throw new Error('Application not found');
+
+    const app = this.applications[appIndex];
+    const previousStatus = app.status;
+
+    app.clarification_response = responseText;
+    app.clarification_responded_at = new Date().toISOString();
+    app.status = 'Resubmitted';
+
+    app.status_history = [
+      ...(app.status_history || []),
+      {
+        id: `sh-${Date.now()}`,
+        application_id: app.id,
+        previous_status: previousStatus,
+        new_status: 'Resubmitted',
+        actor_name: responderName,
+        reason: `Institution response submitted: "${responseText.substring(0, 100)}..."`,
+        created_at: new Date().toISOString()
+      }
+    ];
+
+    app.updated_at = new Date().toISOString();
+    this.applications[appIndex] = app;
+    this.saveLocal();
+
+    await notificationService.notifyClarificationResponded(
+      app.id,
+      app.application_number,
+      app.institution?.name || 'Institution'
+    );
+
+    return app;
   }
 
   /**
@@ -197,11 +694,14 @@ class ApplicationService {
     if (appIndex === -1) return null;
 
     const app = this.applications[appIndex];
-    const existingDocIndex = (app.documents || []).findIndex(d => d.document_type === document.document_type);
+    const existingDocIndex = (app.documents || []).findIndex(d => d.document_type === document.document_type && d.is_active_version !== false);
 
     if (existingDocIndex >= 0 && app.documents) {
-      // Replace existing slot
-      app.documents[existingDocIndex] = document;
+      // Archive old version
+      app.documents[existingDocIndex].is_active_version = false;
+      document.version = (app.documents[existingDocIndex].version || 1) + 1;
+      document.replaced_doc_id = app.documents[existingDocIndex].id;
+      app.documents.push(document);
     } else {
       app.documents = [...(app.documents || []), document];
     }
@@ -237,131 +737,19 @@ class ApplicationService {
     actorName: string = 'AICTE SmartVerify Automated Engine',
     evaluationDate: string = '2026-04-01'
   ): Promise<{ app: Application; findings: ValidationFinding[]; overallOutcome: ValidationOutcome }> {
-    const appIndex = this.applications.findIndex(a => a.id === applicationId);
-    if (appIndex === -1) throw new Error('Application not found');
-
-    const app = this.applications[appIndex];
-    const previousStatus = app.status;
-    const inst = app.institution || SYNTHETIC_INSTITUTIONS[0];
-
-    // Run dynamic rule engine with explicit evaluation date
-    const { findings, overallOutcome } = runApplicationValidation(
-      app,
-      inst.name,
-      inst.code,
-      inst.address,
-      evaluationDate
-    );
-
-    app.findings = findings;
-    app.overall_validation_outcome = overallOutcome;
-
-    // Determine new status if under preliminary validation or active submission
-    if (app.status === 'Draft' || app.status === 'Preliminary Validation' || app.status === 'Action Required') {
-      if (overallOutcome === 'Passed') {
-        app.status = 'Awaiting Official Review';
-      } else if (overallOutcome === 'Failed') {
-        app.status = 'Action Required';
-      } else {
-        app.status = 'Needs Review';
-      }
-    }
-
-    // Append to status history recording real previous and new state
-    app.status_history = [
-      ...(app.status_history || []),
-      {
-        id: `sh-${Date.now()}`,
-        application_id: app.id,
-        previous_status: previousStatus,
-        new_status: app.status,
-        actor_name: actorName,
-        reason: `Re-ran validation engine against ruleset. Outcome: ${overallOutcome}. Evaluated ${findings.length} checks.`,
-        created_at: new Date().toISOString()
-      }
-    ];
-
-    app.updated_at = new Date().toISOString();
-    this.applications[appIndex] = app;
-    this.saveLocal();
-
-    await notificationService.createNotification({
-      title: 'Validation Completed',
-      message: `Validation re-evaluated for ${app.application_number}. Overall outcome: ${overallOutcome}.`,
-      type: overallOutcome === 'Passed' ? 'success' : overallOutcome === 'Failed' ? 'error' : 'warning',
-      application_id: app.id,
-      institution_id: app.institution_id
-    });
-
-    return { app, findings, overallOutcome };
+    const res = await this.validateApplication(applicationId, evaluationDate);
+    return { app: res.app, findings: res.findings, overallOutcome: res.outcome };
   }
 
   /**
    * Submit application (from Draft or Resubmission)
    */
   async submitApplication(applicationId: string, actorName: string): Promise<Application> {
-    const appIndex = this.applications.findIndex(a => a.id === applicationId);
-    if (appIndex === -1) throw new Error('Application not found');
-
-    const app = this.applications[appIndex];
-    const previousStatus = app.status;
-
-    // Run validation immediately
-    const inst = app.institution || SYNTHETIC_INSTITUTIONS[0];
-    const { findings, overallOutcome } = runApplicationValidation(
-      app,
-      inst.name,
-      inst.code,
-      inst.address
-    );
-
-    app.findings = findings;
-    app.overall_validation_outcome = overallOutcome;
-    app.submission_date = new Date().toISOString();
-
-    if (overallOutcome === 'Passed') {
-      app.status = 'Awaiting Official Review';
-    } else if (overallOutcome === 'Failed') {
-      app.status = 'Action Required';
-    } else {
-      app.status = 'Needs Review';
+    const res = await this.finalSubmitApplication(applicationId, actorName);
+    if (!res.success || !res.application) {
+      throw new Error(res.error || 'Submission failed');
     }
-
-    app.status_history = [
-      ...(app.status_history || []),
-      {
-        id: `sh-${Date.now()}-1`,
-        application_id: app.id,
-        previous_status: previousStatus,
-        new_status: 'Submitted',
-        actor_name: actorName,
-        reason: 'Application submitted by institution representative.',
-        created_at: new Date().toISOString()
-      },
-      {
-        id: `sh-${Date.now()}-2`,
-        application_id: app.id,
-        previous_status: 'Submitted',
-        new_status: app.status,
-        actor_name: 'AICTE SmartVerify Automated Engine',
-        reason: `Automated preliminary validation completed. Outcome: ${overallOutcome}.`,
-        created_at: new Date().toISOString()
-      }
-    ];
-
-    app.updated_at = new Date().toISOString();
-    this.applications[appIndex] = app;
-    this.saveLocal();
-
-    await notificationService.createNotification({
-      title: 'Application Submitted',
-      message: `Application ${app.application_number} submitted. Validation outcome: ${overallOutcome}.`,
-      type: overallOutcome === 'Passed' ? 'success' : 'action_required',
-      application_id: app.id,
-      institution_id: app.institution_id
-    });
-
-    return app;
+    return res.application;
   }
 
   /**
@@ -374,7 +762,6 @@ class ApplicationService {
     const app = this.applications[appIndex];
     const previousStatus = app.status;
 
-    // Run validation on corrected data
     const inst = app.institution || SYNTHETIC_INSTITUTIONS[0];
     const { findings, overallOutcome } = runApplicationValidation(
       app,
@@ -404,12 +791,11 @@ class ApplicationService {
     this.applications[appIndex] = app;
     this.saveLocal();
 
-    await notificationService.createNotification({
-      title: 'Application Resubmitted',
-      message: `Corrections submitted for ${app.application_number}. Forwarded to Scrutiny Desk.`,
-      type: 'info',
-      application_id: app.id
-    });
+    await notificationService.notifyClarificationResponded(
+      app.id,
+      app.application_number,
+      app.institution?.name || 'Institution'
+    );
 
     return app;
   }
@@ -444,7 +830,6 @@ class ApplicationService {
 
     app.comments = [...(app.comments || []), newComment];
 
-    // Status transition based on decision
     if (commentType === 'Final Decision') {
       if (decision === 'Approved') {
         app.status = 'Review Completed';
@@ -457,11 +842,10 @@ class ApplicationService {
       }
     } else if (commentType === 'Correction Request') {
       app.status = 'Action Required';
-    } else if (app.status === 'Awaiting Official Review' || app.status === 'Resubmitted') {
+    } else if (app.status === 'Awaiting Official Review' || app.status === 'Resubmitted' || app.status === 'Submitted') {
       app.status = 'Under Review';
     }
 
-    // Add status history
     app.status_history = [
       ...(app.status_history || []),
       {
@@ -479,14 +863,14 @@ class ApplicationService {
     this.applications[appIndex] = app;
     this.saveLocal();
 
-    // In-app notification for institution
-    await notificationService.createNotification({
-      title: commentType === 'Final Decision' ? 'Official Scrutiny Decision' : 'Official Scrutiny Comment Added',
-      message: `${authorName} recorded: "${commentText.substring(0, 90)}..."`,
-      type: decision === 'Approved' ? 'success' : decision === 'Rejected' || decision === 'Action Required' ? 'warning' : 'info',
-      application_id: applicationId,
-      institution_id: app.institution_id
-    });
+    await notificationService.notifyStatusChanged(
+      app.id,
+      app.application_number,
+      app.institution_id,
+      previousStatus,
+      app.status,
+      commentText
+    );
 
     return app;
   }
@@ -545,7 +929,7 @@ class ApplicationService {
       documentNumber: targetDoc?.extracted_fields?.documentNumber || 'REF-PENDING',
       institutionCode: inst.code,
       institutionName: inst.name,
-      issueDate: targetDoc?.extracted_fields?.issueDate
+      issueDate: targetDoc?.extracted_fields?.issueDate || undefined
     });
 
     if (!app.authority_verifications) {
@@ -553,15 +937,13 @@ class ApplicationService {
     }
     app.authority_verifications[documentType] = result;
 
-    // Revalidate application so authority result is reflected in findings
-    await this.revalidateApplication(applicationId, `${actorName} (Authority Verification)`);
+    await this.validateApplication(applicationId);
 
     return { app: this.applications[appIndex], result };
   }
 
   /**
    * Rectification Workflow: Upload replacement document for an existing slot
-   * Preserves version history (version 2, replaces version 1), updates slot, and triggers revalidation.
    */
   async uploadReplacementDocument(
     applicationId: string,
@@ -577,11 +959,9 @@ class ApplicationService {
     const inst = app.institution || SYNTHETIC_INSTITUTIONS[0];
     const previousStatus = app.status;
 
-    // Locate existing document
     const existingDoc = (app.documents || []).find(d => d.document_type === documentType && d.is_active_version !== false);
     const newVersion = existingDoc ? (existingDoc.version || 1) + 1 : 1;
 
-    // Archive previous version if present
     if (existingDoc) {
       existingDoc.is_active_version = false;
     }
@@ -603,17 +983,17 @@ class ApplicationService {
     const newDoc = uploadRes.document;
     app.documents = [...(app.documents || []), newDoc];
 
-    // Status transition to 'Resubmitted'
-    app.status = 'Resubmitted';
+    if (app.status === 'Clarification Required') {
+      app.status = 'Resubmitted';
+    }
 
-    // Append to status history
     app.status_history = [
       ...(app.status_history || []),
       {
         id: `sh-${Date.now()}`,
         application_id: applicationId,
         previous_status: previousStatus,
-        new_status: 'Resubmitted',
+        new_status: app.status,
         actor_name: actorName,
         reason: `Uploaded replacement document for "${documentType}" (v${newVersion}). ${rectificationNote ? `Note: ${rectificationNote}` : ''}`,
         created_at: new Date().toISOString()
@@ -624,16 +1004,7 @@ class ApplicationService {
     this.applications[appIndex] = app;
     this.saveLocal();
 
-    // Re-run validation immediately on replaced document
-    await this.revalidateApplication(applicationId, 'AICTE SmartVerify Rectification Engine');
-
-    await notificationService.createNotification({
-      title: 'Replacement Document Uploaded',
-      message: `New version of "${documentType}" uploaded by ${actorName}. Revalidation completed.`,
-      type: 'info',
-      application_id: applicationId,
-      institution_id: app.institution_id
-    });
+    await this.validateApplication(applicationId);
 
     return { app: this.applications[appIndex], document: newDoc };
   }
@@ -649,7 +1020,6 @@ class ApplicationService {
   ): Promise<{ app: Application; document: ApplicationDocument }> {
     return this.uploadReplacementDocument(applicationId, documentType, file, actorName);
   }
-
 
   /**
    * Allows manual correction of an extracted field on a document with provenance tracking
@@ -676,8 +1046,7 @@ class ApplicationService {
     this.applications[appIndex] = app;
     this.saveLocal();
 
-    // Re-run validation with updated values
-    await this.revalidateApplication(applicationId, `${reviewerName} (Manual Field Correction)`);
+    await this.validateApplication(applicationId);
 
     return this.applications[appIndex];
   }

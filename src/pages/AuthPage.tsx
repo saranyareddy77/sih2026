@@ -3,16 +3,16 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { 
-  ShieldCheck, 
-  Lock, 
-  Mail, 
-  User, 
-  Building2, 
-  Eye, 
-  EyeOff, 
-  AlertCircle, 
-  CheckCircle2, 
+import {
+  ShieldCheck,
+  Lock,
+  Mail,
+  User,
+  Building2,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  CheckCircle2,
   ArrowRight,
   ShieldAlert,
   Hash,
@@ -178,7 +178,7 @@ export const AuthPage: React.FC = () => {
             {mode === 'signin' ? 'Sign In to SmartVerify' : 'Register Institution'}
           </h1>
           <p className="auth-subtitle">
-            {mode === 'signin' 
+            {mode === 'signin'
               ? 'Enter your credentials to access the regulatory verification portal'
               : 'Register an institutional account for AICTE regulatory approval submissions'}
           </p>
@@ -435,6 +435,24 @@ export const AuthPage: React.FC = () => {
                   <option value="Architecture & Planning">Architecture &amp; Planning</option>
                   <option value="Applied Arts & Crafts">Applied Arts &amp; Crafts</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="reg-address">
+                Campus Physical Address *
+              </label>
+              <div className="input-with-icon">
+                <MapPin size={16} className="input-icon" />
+                <input
+                  id="reg-address"
+                  type="text"
+                  required
+                  placeholder="e.g. Sector 62, Institutional Area, Knowledge Park"
+                  className="form-input"
+                  value={address}
+                  onChange={e => setAddress(e.target.value)}
+                />
               </div>
             </div>
 

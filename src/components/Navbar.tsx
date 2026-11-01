@@ -32,9 +32,15 @@ export const Navbar: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    const unsubAuth = authService.subscribe(user => setCurrentUser(user));
+    const unsubAuth = authService.subscribe(user => {
+      setCurrentUser(user);
+      const userItems = notificationService.filterForUser(notificationService.getAllLocal(), user);
+      setUnreadCount(userItems.filter(i => !i.is_read).length);
+    });
     const unsubNotif = notificationService.subscribe(items => {
-      setUnreadCount(items.filter(i => !i.is_read).length);
+      const user = authService.getCurrentUser();
+      const userItems = notificationService.filterForUser(items, user);
+      setUnreadCount(userItems.filter(i => !i.is_read).length);
     });
 
     const handleKeyDown = (e: KeyboardEvent) => {

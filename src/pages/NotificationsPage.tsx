@@ -18,13 +18,18 @@ import { notificationService } from '../services/notificationService';
 import { authService } from '../services/authService';
 
 export const NotificationsPage: React.FC = () => {
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const currentUser = authService.getCurrentUser();
+  const [notifications, setNotifications] = useState<NotificationItem[]>(
+    notificationService.filterForUser(notificationService.getAllLocal(), currentUser)
+  );
+  const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
   useEffect(() => {
-    const unsub = notificationService.subscribe(items => setNotifications(items));
-    notificationService.getNotifications(currentUser?.institution_id);
+    notificationService.getNotifications(currentUser);
+    const unsub = notificationService.subscribe(items => {
+      const roleItems = notificationService.filterForUser(items, currentUser);
+      setNotifications(roleItems);
+    });
     return () => unsub();
   }, [currentUser]);
 
@@ -119,14 +124,14 @@ export const NotificationsPage: React.FC = () => {
                   </p>
 
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    {item.application_id && (
+                    {(item.action_url || item.application_id) && (
                       <Link 
-                        to={`/applications/${item.application_id}`}
+                        to={item.action_url || `/applications/${item.application_id}`}
                         className="btn btn-outline btn-sm"
                         style={{ fontSize: '0.75rem', padding: '3px 8px' }}
                       >
                         <ExternalLink size={12} />
-                        View Application
+                        View Application Dossier
                       </Link>
                     )}
 

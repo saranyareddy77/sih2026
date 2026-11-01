@@ -206,7 +206,7 @@ class DocumentService {
       doc.extracted_fields?.institutionName || 'Demo Institute',
       doc.extracted_fields?.institutionCode || '1-DEMO-CODE',
       doc.extracted_fields?.issueDate || '2026-01-01',
-      doc.extracted_fields?.expiryDate,
+      doc.extracted_fields?.expiryDate || undefined,
       doc.ocr_status === 'Low Readability',
       doc.is_corrupt
     );

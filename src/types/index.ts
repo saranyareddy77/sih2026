@@ -130,13 +130,18 @@ export interface ComplaintDisposal {
 
 export type ApplicationStatus =
   | 'Draft'
+  | 'Validation Required'
+  | 'Ready for Submission'
   | 'Submitted'
+  | 'Under Scrutiny'
+  | 'Clarification Required'
+  | 'Resubmitted'
+  | 'Verified'
   | 'Preliminary Validation'
   | 'Action Required'
   | 'Awaiting Official Review'
   | 'Under Review'
   | 'Needs Review'
-  | 'Resubmitted'
   | 'Authenticity Confirmation Pending'
   | 'Verification Complete'
   | 'Review Completed'
@@ -174,6 +179,17 @@ export interface Profile {
   updated_at: string;
 }
 
+export interface ApprovedCourseItem {
+  id: string;
+  programme: string;
+  course: string;
+  level: string;
+  approvedIntake?: number;
+  approved_intake?: number;
+  yearStarted?: string;
+  academic_year?: string;
+}
+
 export interface Institution {
   id: string;
   name: string;
@@ -189,6 +205,47 @@ export interface Institution {
   website?: string;
   region?: string;
   district?: string;
+
+  // Institution Profile & Statutory Records
+  previous_approval_details?: {
+    approvalNumber?: string;
+    approvalDate?: string;
+    academicYear?: string;
+    status?: string;
+    remarks?: string;
+  };
+  director_name?: string;
+  director_email?: string;
+  director_phone?: string;
+  representative_name?: string;
+  representative_designation?: string;
+  approved_programmes?: ApprovedCourseItem[];
+  faculty_records?: {
+    totalFaculty?: number;
+    cadreRatio?: string;
+    phdCount?: number;
+    studentFacultyRatio?: string;
+  };
+  accreditation_details?: {
+    naacGrade?: string;
+    naacValidUntil?: string;
+    nbaAccreditedCourses?: string;
+    nbaAccredited?: boolean;
+    universityAffiliation?: string;
+    affiliatingUniversity?: string;
+    [key: string]: any;
+  };
+  infrastructure_details?: {
+    landAreaAcres?: number;
+    builtUpAreaSqm?: number;
+    classroomsCount?: number;
+    labsCount?: number;
+    computersCount?: number;
+    libraryTitlesCount?: number;
+  };
+  is_profile_completed?: boolean;
+  profile_completion_percentage?: number;
+
   total_complaints?: number;
   pending_complaints?: number;
   disposed_complaints?: number;
@@ -207,15 +264,15 @@ export type ExtractionMethod =
   | 'synthetic_fixture'
   | 'external_import';
 
-export type FieldReviewStatus = 'extracted' | 'verified' | 'corrected' | 'unknown' | 'insufficient_evidence';
+export type FieldReviewStatus = 'extracted' | 'verified' | 'corrected' | 'unknown' | 'insufficient_evidence' | 'unconfirmed';
 
 export interface ExtractedFieldItem {
   fieldName: string;
-  label: string;
-  extractedValue?: string;
-  normalizedValue?: string;
+  label?: string;
+  extractedValue?: string | null;
+  normalizedValue?: string | null;
   pageNumber?: number;
-  confidence?: number;
+  confidence?: number | null;
   method: ExtractionMethod;
   reviewStatus: FieldReviewStatus;
   correctedValue?: string;
@@ -225,14 +282,14 @@ export interface ExtractedFieldItem {
 }
 
 export interface ExtractedDocumentFields {
-  institutionName?: string;
-  institutionCode?: string;
-  address?: string;
-  documentNumber?: string;
-  issueDate?: string;
-  expiryDate?: string;
-  academicYear?: string;
-  issuingAuthority?: string;
+  institutionName?: string | null;
+  institutionCode?: string | null;
+  address?: string | null;
+  documentNumber?: string | null;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  academicYear?: string | null;
+  issuingAuthority?: string | null;
   hasSeal?: boolean;
   hasSignature?: boolean;
   isExpired?: boolean;
@@ -303,11 +360,13 @@ export type AuthorityVerificationStatus =
 
 export interface AuthorityVerificationRequest {
   documentType: string;
-  authorityName: string;
+  authorityName?: string;
+  issuingAuthority?: string;
   documentNumber: string;
-  institutionCode: string;
-  institutionName: string;
-  issueDate?: string;
+  institutionCode?: string;
+  institutionName?: string;
+  issueDate?: string | null;
+  documentId?: string;
 }
 
 export interface AuthorityVerificationResult {
@@ -409,10 +468,13 @@ export interface NotificationItem {
   id: string;
   user_id?: string;
   institution_id?: string;
+  target_role?: 'institution_user' | 'scrutiny_officer' | 'super_admin' | 'all';
   title: string;
   message: string;
   type: 'info' | 'success' | 'warning' | 'error' | 'action_required';
   application_id?: string;
+  action_url?: string;
+  event_type?: string;
   is_read: boolean;
   created_at: string;
 }
@@ -450,6 +512,15 @@ export interface Application {
   status_requests?: StatusUpdateRequest[];
   infrastructure_evidence?: InfrastructureEvidenceItem[];
   authority_verifications?: Record<string, AuthorityVerificationResult>;
+
+  // Approval Workflow, Draft Persistence & Clarification cycle
+  draft_data?: Record<string, any>;
+  submission_snapshot?: Record<string, any>;
+  clarification_request?: string;
+  clarification_response?: string;
+  clarification_requested_at?: string;
+  clarification_responded_at?: string;
+  step_progress?: number;
 
   // Complaint Monitoring & Cross-Bureau Coordination fields
   case_id?: string;

@@ -3,17 +3,17 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  ShieldCheck, 
-  FileCheck, 
-  Search, 
-  CheckCircle2, 
-  Clock, 
-  AlertCircle, 
-  ArrowRight, 
-  Lock, 
-  Layers, 
-  Building2, 
+import {
+  ShieldCheck,
+  FileCheck,
+  Search,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  ArrowRight,
+  Lock,
+  Layers,
+  Building2,
   FileText,
   UserCheck,
   Scale
@@ -36,7 +36,7 @@ export const LandingPage: React.FC = () => {
           </h1>
 
           <p className="landing-hero-subtext">
-            Integrated institution complaint monitoring and status dashboard across Regulation Bureau (RB), Public Grievance Redressal Cell (PGRC), and Regional Desks — with automated overlap detection.
+            Integrated institution complaint monitoring and status dashboard across Regulation Bureau (RB), Public Grievance Redressal Cell (PGRC), and Regional Desks with automated overlap detection.
           </p>
 
           <div className="landing-hero-actions">
@@ -53,10 +53,6 @@ export const LandingPage: React.FC = () => {
             <div className="trust-item">
               <CheckCircle2 size={16} className="trust-icon" />
               <span>Cross-Bureau Overlap Alert</span>
-            </div>
-            <div className="trust-item">
-              <Lock size={16} className="trust-icon" />
-              <span>PostgreSQL RLS Security</span>
             </div>
             <div className="trust-item">
               <Scale size={16} className="trust-icon" />
@@ -245,13 +241,12 @@ export const LandingPage: React.FC = () => {
               <span className="footer-link-title">Standards</span>
               <span>APH 2026-27 Norms</span>
               <span>10 Verification Factors</span>
-              <span>PostgreSQL RLS</span>
             </div>
           </div>
         </div>
 
         <div className="footer-bottom">
-          <span>&copy; 2026 AICTE SmartVerify • Smart India Hackathon PS 26261.</span>
+          <span>&copy; 2026 AICTE SmartVerify</span>
         </div>
       </footer>
     </div>

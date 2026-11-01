@@ -37,7 +37,8 @@ import {
   AlertOctagon,
   Link2,
   Share2,
-  FolderSync
+  FolderSync,
+  FileCheck2
 } from 'lucide-react';
 import { 
   Application, 
@@ -54,8 +55,9 @@ import { complaintService } from '../services/complaintService';
 import { overlapDetectionService } from '../services/overlapDetectionService';
 import { authService } from '../services/authService';
 import { DocumentViewer } from '../components/DocumentViewer';
+import { ValidationFindingsPanel } from '../components/ValidationFindingsPanel';
 
-type DrawerType = 'cross_comparison' | 'authority' | 'infrastructure' | 'rules' | 'audit_history' | 'clarifications' | null;
+type DrawerType = 'cross_comparison' | 'authority' | 'infrastructure' | 'rules' | 'audit_history' | 'clarifications' | 'validation_findings' | null;
 
 export const ApplicationDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -101,6 +103,22 @@ export const ApplicationDetail: React.FC = () => {
   const [interBureauRecipient, setInterBureauRecipient] = useState<string>('Regulation Bureau (RB)');
   const [interBureauSubject, setInterBureauSubject] = useState<string>('');
   const [interBureauMessage, setInterBureauMessage] = useState<string>('');
+
+  // Scrutiny Officer Decision modal state
+  const [showDecisionModal, setShowDecisionModal] = useState<boolean>(false);
+  const [decisionType, setDecisionType] = useState<'Approved' | 'Rejected' | 'Action Required' | 'Needs Further Inspection'>('Approved');
+  const [decisionNotes, setDecisionNotes] = useState<string>('');
+  const [isRecordingDecision, setIsRecordingDecision] = useState<boolean>(false);
+
+  // Scrutiny Clarification Directive modal state
+  const [showClarifyDirectiveModal, setShowClarifyDirectiveModal] = useState<boolean>(false);
+  const [clarifyDirectiveQuery, setClarifyDirectiveQuery] = useState<string>('');
+  const [isSendingClarifyDirective, setIsSendingClarifyDirective] = useState<boolean>(false);
+
+  // Institution Clarification Response modal state
+  const [showClarifyReplyModal, setShowClarifyReplyModal] = useState<boolean>(false);
+  const [clarifyReplyText, setClarifyReplyText] = useState<string>('');
+  const [isSendingClarifyReply, setIsSendingClarifyReply] = useState<boolean>(false);
 
   const currentUser = authService.getCurrentUser();
   const isAdmin = authService.isAdmin();
@@ -498,7 +516,46 @@ export const ApplicationDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Secondary Workflow Toolbar (Drawers) */}
+      {/* Clarification Directive Notice if present */}
+      {app.clarification_request && (
+        <div style={{
+          backgroundColor: '#fff1f2',
+          border: '1px solid #fecdd3',
+          borderRadius: '8px',
+          padding: '14px 18px',
+          marginBottom: '16px'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#991b1b', fontWeight: 700, fontSize: '0.875rem' }}>
+                <AlertTriangle size={16} />
+                Official Scrutiny Directive Issued to Institution:
+              </div>
+              <p style={{ margin: '4px 0 0', color: '#b91c1c', fontSize: '0.875rem' }}>
+                "{app.clarification_request}"
+              </p>
+              {app.clarification_response && (
+                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #fecdd3' }}>
+                  <span style={{ fontWeight: 600, color: '#065f46', fontSize: '0.8125rem' }}>Institution Response: </span>
+                  <span style={{ color: '#047857', fontSize: '0.8125rem' }}>"{app.clarification_response}"</span>
+                </div>
+              )}
+            </div>
+
+            {!isAdmin && app.status === 'Clarification Required' && (
+              <button
+                type="button"
+                onClick={() => setShowClarifyReplyModal(true)}
+                className="btn btn-rose-subtle btn-sm"
+              >
+                Submit Certified Response
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Secondary Workflow Toolbar (Drawers & Scrutiny Actions) */}
       <div style={{ 
         display: 'flex', 
         gap: '8px', 
@@ -508,8 +565,39 @@ export const ApplicationDetail: React.FC = () => {
         alignItems: 'center'
       }}>
         <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: '4px' }}>
-          Coordination Tools:
+          Verification Tools:
         </span>
+
+        <button
+          onClick={() => setActiveDrawer('validation_findings')}
+          className={`btn btn-sm ${activeDrawer === 'validation_findings' ? 'btn-primary' : 'btn-outline'}`}
+          style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+        >
+          <ShieldCheck size={13} />
+          Validation Findings ({app.findings?.length || 0} Checks)
+        </button>
+
+        {isAdmin && (
+          <>
+            <button
+              onClick={() => setShowClarifyDirectiveModal(true)}
+              className="btn btn-outline-clean btn-sm"
+              style={{ fontSize: '0.75rem', padding: '5px 12px', color: '#d97706', borderColor: '#fde68a' }}
+            >
+              <AlertCircle size={13} />
+              Issue Clarification Directive
+            </button>
+
+            <button
+              onClick={() => setShowDecisionModal(true)}
+              className="btn btn-emerald-primary btn-sm"
+              style={{ fontSize: '0.75rem', padding: '5px 12px' }}
+            >
+              <FileCheck2 size={13} />
+              Record Scrutiny Decision
+            </button>
+          </>
+        )}
 
         <button
           onClick={() => setActiveDrawer('cross_comparison')}
@@ -517,7 +605,7 @@ export const ApplicationDetail: React.FC = () => {
           style={{ fontSize: '0.75rem', padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
           <Layers size={13} />
-          Cross-Bureau Overlap Analysis ({concurrentInstitutionCases.length} Concurrent)
+          Cross-Bureau Overlap ({concurrentInstitutionCases.length} Concurrent)
         </button>
 
         <button
@@ -908,6 +996,20 @@ export const ApplicationDetail: React.FC = () => {
             </div>
 
             <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+              {activeDrawer === 'validation_findings' && (
+                <div>
+                  <h3 style={{ margin: '0 0 12px', fontSize: '1rem', fontWeight: 700 }}>
+                    10-Factor Automated Validation Findings &amp; Regulatory Checks
+                  </h3>
+                  <ValidationFindingsPanel
+                    applicationId={app.id}
+                    findings={app.findings || []}
+                    selectedDocumentId={selectedDocument?.id}
+                    onFindingUpdated={loadData}
+                  />
+                </div>
+              )}
+
               {activeDrawer === 'cross_comparison' && (
                 <div>
                   <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
@@ -1231,6 +1333,187 @@ export const ApplicationDetail: React.FC = () => {
                 <button type="button" onClick={() => setShowRemarkModal(false)} className="btn btn-outline-clean btn-sm">Cancel</button>
                 <button type="submit" disabled={isAddingRemark} className="btn btn-emerald-primary btn-sm">
                   {isAddingRemark ? 'Saving...' : 'Save Remark'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: Scrutiny Officer Decision Modal */}
+      {showDecisionModal && (
+        <div className="modal-overlay" onClick={() => setShowDecisionModal(false)}>
+          <div className="modal-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: '540px' }}>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!decisionNotes.trim()) return;
+              setIsRecordingDecision(true);
+              try {
+                await applicationService.recordAdminReview(
+                  app.id,
+                  currentUser?.full_name || 'Scrutiny Officer',
+                  currentUser?.id,
+                  'Final Decision',
+                  decisionNotes.trim(),
+                  decisionType
+                );
+                alert(`Scrutiny Decision "${decisionType}" recorded successfully!`);
+                setShowDecisionModal(false);
+                setDecisionNotes('');
+                await loadData();
+              } catch (err: any) {
+                alert(err.message || 'Failed to record decision');
+              } finally {
+                setIsRecordingDecision(false);
+              }
+            }} className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Record Official Scrutiny Decision</h3>
+                <button type="button" onClick={() => setShowDecisionModal(false)} className="close-btn">✕</button>
+              </div>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Statutory Recommendation / Decision *</label>
+                  <select 
+                    className="form-input"
+                    value={decisionType}
+                    onChange={e => setDecisionType(e.target.value as any)}
+                  >
+                    <option value="Approved">Approved (Grant Extension of Approval)</option>
+                    <option value="Action Required">Action Required (Deficiencies / Document Corrections)</option>
+                    <option value="Needs Further Inspection">Needs Further Inspection (Physical Expert Committee Visit)</option>
+                    <option value="Rejected">Rejected (Non-compliance with Statutory Criteria)</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Official Committee Findings &amp; Order Text *</label>
+                  <textarea 
+                    required 
+                    rows={5} 
+                    className="form-input"
+                    placeholder="Enter formal scrutiny observations, statutory basis, and directives..."
+                    value={decisionNotes}
+                    onChange={e => setDecisionNotes(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" onClick={() => setShowDecisionModal(false)} className="btn btn-outline-clean btn-sm">Cancel</button>
+                <button type="submit" disabled={isRecordingDecision} className="btn btn-emerald-primary btn-sm">
+                  {isRecordingDecision ? 'Recording Decision...' : 'Record & Publish Decision'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: Scrutiny Clarification Directive Modal */}
+      {showClarifyDirectiveModal && (
+        <div className="modal-overlay" onClick={() => setShowClarifyDirectiveModal(false)}>
+          <div className="modal-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: '540px' }}>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!clarifyDirectiveQuery.trim()) return;
+              setIsSendingClarifyDirective(true);
+              try {
+                await applicationService.requestClarification(
+                  app.id,
+                  clarifyDirectiveQuery.trim(),
+                  currentUser?.full_name || 'Scrutiny Officer'
+                );
+                alert('Clarification directive issued to institution representative!');
+                setShowClarifyDirectiveModal(false);
+                setClarifyDirectiveQuery('');
+                await loadData();
+              } catch (err: any) {
+                alert(err.message || 'Failed to issue directive');
+              } finally {
+                setIsSendingClarifyDirective(false);
+              }
+            }} className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Issue Clarification Directive to Institution</h3>
+                <button type="button" onClick={() => setShowClarifyDirectiveModal(false)} className="close-btn">✕</button>
+              </div>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Specific Query / Missing Evidence Directive *</label>
+                  <textarea 
+                    required 
+                    rows={5} 
+                    className="form-input"
+                    placeholder="Specify the clarification required regarding uploaded certificates, dates, or land/infrastructure details..."
+                    value={clarifyDirectiveQuery}
+                    onChange={e => setClarifyDirectiveQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" onClick={() => setShowClarifyDirectiveModal(false)} className="btn btn-outline-clean btn-sm">Cancel</button>
+                <button type="submit" disabled={isSendingClarifyDirective} className="btn btn-emerald-primary btn-sm">
+                  {isSendingClarifyDirective ? 'Issuing...' : 'Issue Statutory Directive'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 7: Institution Clarification Response Modal */}
+      {showClarifyReplyModal && (
+        <div className="modal-overlay" onClick={() => setShowClarifyReplyModal(false)}>
+          <div className="modal-dialog" onClick={e => e.stopPropagation()} style={{ maxWidth: '540px' }}>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!clarifyReplyText.trim()) return;
+              setIsSendingClarifyReply(true);
+              try {
+                await applicationService.submitClarificationResponse(
+                  app.id,
+                  clarifyReplyText.trim(),
+                  currentUser?.full_name || 'Authorized Representative'
+                );
+                alert('Clarification statement submitted to Scrutiny Desk!');
+                setShowClarifyReplyModal(false);
+                setClarifyReplyText('');
+                await loadData();
+              } catch (err: any) {
+                alert(err.message || 'Failed to submit response');
+              } finally {
+                setIsSendingClarifyReply(false);
+              }
+            }} className="modal-content">
+              <div className="modal-header">
+                <h3 className="modal-title">Submit Response to Scrutiny Directive</h3>
+                <button type="button" onClick={() => setShowClarifyReplyModal(false)} className="close-btn">✕</button>
+              </div>
+              <div className="modal-body">
+                <div style={{ padding: '12px', backgroundColor: '#fff1f2', borderRadius: '6px', border: '1px solid #fecdd3', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#991b1b', textTransform: 'uppercase' }}>
+                    Officer Scrutiny Directive:
+                  </div>
+                  <div style={{ fontSize: '0.875rem', color: '#b91c1c', marginTop: '4px' }}>
+                    "{app.clarification_request}"
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Institution Explanation &amp; Certified Statement *</label>
+                  <textarea 
+                    required 
+                    rows={5} 
+                    className="form-input"
+                    placeholder="Provide formal response and explanation from Principal/Registrar..."
+                    value={clarifyReplyText}
+                    onChange={e => setClarifyReplyText(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" onClick={() => setShowClarifyReplyModal(false)} className="btn btn-outline-clean btn-sm">Cancel</button>
+                <button type="submit" disabled={isSendingClarifyReply} className="btn btn-emerald-primary btn-sm">
+                  {isSendingClarifyReply ? 'Submitting...' : 'Submit Clarification Response'}
                 </button>
               </div>
             </form>
